@@ -1,13 +1,13 @@
 {
-    "display_name": "📋프롬프트QM",
+    "display_name": "Ptest",
     "loading_order": 5,
     "requires": [],
     "optional": [],
     "dependencies": [],
-    "js": "index.js",
-    "css": "style.css",
+    "js": "index-1.js",
+    "css": "style-1.css",
     "author": "",
     "version": "1.1.0",
-    "homePage": "https://github.com/DenBzs/Prompt-Quick-Manager",
+    "homePage": "https://github.com/DenBzs/Ptest",
     "auto_update": false
 }
