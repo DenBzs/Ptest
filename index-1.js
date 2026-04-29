@@ -1,6 +1,6 @@
 // PromptQM — prompt-qm
 
-const extensionName   = 'Prompt-Quick-Manager';
+const extensionName   = 'Ptest';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
@@ -120,6 +120,29 @@ function setPpcTheme(key) {
     saveSettingsDebounced();
     applyPpcTheme();
 }
+
+// ── PPC button ON/OFF setting ─────────────────────────────────────────────────
+function getPpcEnabled() {
+    return getTGStore().ppcEnabled ?? true;
+}
+function setPpcEnabled(val) {
+    getTGStore().ppcEnabled = val;
+    saveSettingsDebounced();
+    updatePpcBtnVisibility();
+}
+function updatePpcBtnVisibility() {
+    const enabled = getPpcEnabled();
+    // Show/hide the chat bar button
+    const btn = document.getElementById('ppc-btn');
+    if (btn) btn.style.display = enabled ? '' : 'none';
+    // Sync the toggle button in the TG drawer
+    const tglBtn = document.getElementById('ptm-ppc-enable-btn');
+    if (tglBtn) {
+        tglBtn.textContent = enabled ? '🔌 ON' : '🔌OFF';
+        tglBtn.style.background = enabled ? PPC_ON_BG  : PPC_OFF_BG;
+        tglBtn.style.color      = enabled ? PPC_ON_CLR : PPC_OFF_CLR;
+    }
+}
 function applyPpcTheme() {
     const key = getPpcTheme();
     const t = PPC_THEMES[key] || PPC_THEMES.classic;
@@ -212,15 +235,21 @@ function renderTGGroups() {
     // validIds (from prompt_order) can still contain stale entries for prompts
     // that have already been deleted from the prompts array, so we filter
     // against allPromptIds instead to keep toggle groups in sync.
+    //
+    // IMPORTANT: Only filter when allPrompts is non-empty.
+    // If setupChatCompletionPromptManager fails mid-rename and returns [],
+    // allPromptIds would be an empty Set — wiping every toggle and saving.
     const allPromptIds = new Set(allPrompts.map(p => p.identifier));
     const groups = getGroupsForPreset(pn);
-    let changed = false;
-    groups.forEach(g => {
-        const before = g.toggles.length;
-        g.toggles = g.toggles.filter(t => allPromptIds.has(t.target));
-        if (g.toggles.length !== before) changed = true;
-    });
-    if (changed) saveGroups(pn, groups);
+    if (allPrompts.length > 0) {
+        let changed = false;
+        groups.forEach(g => {
+            const before = g.toggles.length;
+            g.toggles = g.toggles.filter(t => allPromptIds.has(t.target));
+            if (g.toggles.length !== before) changed = true;
+        });
+        if (changed) saveGroups(pn, groups);
+    }
 
     if (!groups.length) { area.innerHTML = '<div class="ptm-ph">그룹이 없습니다</div>'; return; }
     area.innerHTML = groups.map((g, gi) => buildGroupCard(g, gi, pn, allPrompts)).join('');
@@ -519,7 +548,10 @@ async function showAddToggleModal(gi) {
     const pn = getCurrentPreset(), preset = getLivePresetData(pn);
     if (!preset) return;
     const gs = getGroupsForPreset(pn), exists = new Set(gs[gi].toggles.map(t => t.target));
-    const prompts = preset.prompts || [];
+    // Sort prompts A→Z so the picker list is always in predictable order.
+    // Use a copy to avoid mutating the original preset array.
+    const prompts = [...(preset.prompts || [])].sort((a, b) =>
+        (a.name ?? '').localeCompare(b.name ?? '', 'ko'));
     const selectedMap = new Map();
 
     const listHtml = prompts.map((p, idx) => {
@@ -706,6 +738,13 @@ function buildTGDrawer() {
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
+            <div style="display:flex;align-items:center;gap:8px;padding:4px 0 6px;">
+                <button id="ptm-ppc-enable-btn" class="ptm-sm"
+                    style="margin:0;padding:3px 10px;font-weight:700;border-radius:6px;flex-shrink:0;">
+                    🔌 ON
+                </button>
+                <span style="font-size:12px;opacity:0.65;">🤖📋 팝업</span>
+            </div>
             <div id="ptm-tg-area"><div class="ptm-ph">로딩 중...</div></div>
             <div style="display:flex;gap:6px;margin-top:0;align-items:center">
                 <button class="ptm-sm ptm-sm-full" id="ptm-add-group" style="flex:1;margin:0">+ 그룹 추가</button>
@@ -954,6 +993,12 @@ function wireTG() {
     document.querySelector('#ptm-tg-drawer .inline-drawer-toggle')?.addEventListener('click', () => {
         setTimeout(renderTGGroups, 0);
     });
+    // PPC popup ON/OFF toggle
+    document.getElementById('ptm-ppc-enable-btn')?.addEventListener('click', () => {
+        setPpcEnabled(!getPpcEnabled());
+    });
+    // Apply initial button appearance
+    updatePpcBtnVisibility();
     document.getElementById('ptm-add-group')?.addEventListener('click', async () => {
         const pn = getCurrentPreset(); if (!pn) { toastr.warning('프리셋을 먼저 선택하세요'); return; }
         const name = await callGenericPopup('새 그룹 이름:', POPUP_TYPE.INPUT, '');
@@ -1582,6 +1627,8 @@ function injectPpcButton() {
         const sendBtn = document.getElementById('send_but');
         if (sendBtn?.parentElement) sendBtn.parentElement.insertBefore(btn, sendBtn);
     }
+    // Respect the stored ON/OFF setting immediately after injection
+    updatePpcBtnVisibility();
 }
 
 function setupPpcEvents() {
