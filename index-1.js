@@ -1,6 +1,6 @@
 // PromptQM — prompt-qm
 
-const extensionName   = 'Ptest';
+const extensionName   = 'Prompt-Quick-Manager';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
@@ -50,6 +50,12 @@ function getTGStore() {
 function getGroupsForPreset(pn) {
     const s = getTGStore();
     if (!s.presets[pn]) s.presets[pn] = [];
+    // Migrate any groups that still use legacy boolean isOn → state string
+    s.presets[pn].forEach(g => {
+        if (!g.state) {
+            g.state = g.isOn === true ? 'on' : g.isOn === false ? 'off' : 'neutral';
+        }
+    });
     return s.presets[pn];
 }
 function saveGroups(pn, groups) {
@@ -120,29 +126,6 @@ function setPpcTheme(key) {
     saveSettingsDebounced();
     applyPpcTheme();
 }
-
-// ── PPC button ON/OFF setting ─────────────────────────────────────────────────
-function getPpcEnabled() {
-    return getTGStore().ppcEnabled ?? true;
-}
-function setPpcEnabled(val) {
-    getTGStore().ppcEnabled = val;
-    saveSettingsDebounced();
-    updatePpcBtnVisibility();
-}
-function updatePpcBtnVisibility() {
-    const enabled = getPpcEnabled();
-    // Show/hide the chat bar button
-    const btn = document.getElementById('ppc-btn');
-    if (btn) btn.style.display = enabled ? '' : 'none';
-    // Sync the toggle button in the TG drawer
-    const tglBtn = document.getElementById('ptm-ppc-enable-btn');
-    if (tglBtn) {
-        tglBtn.textContent = enabled ? '🔌 ON' : '🔌OFF';
-        tglBtn.style.background = enabled ? PPC_ON_BG  : PPC_OFF_BG;
-        tglBtn.style.color      = enabled ? PPC_ON_CLR : PPC_OFF_CLR;
-    }
-}
 function applyPpcTheme() {
     const key = getPpcTheme();
     const t = PPC_THEMES[key] || PPC_THEMES.classic;
@@ -181,17 +164,41 @@ function applyPpcTheme() {
 // B. Apply group
 // ══════════════════════════════════════════
 
+// Normalize legacy boolean isOn → 3-state string
+function getGroupState(g) {
+    if (g.state === 'on' || g.state === 'neutral' || g.state === 'off') return g.state;
+    // Migrate old boolean isOn
+    if (g.isOn === true)  return 'on';
+    if (g.isOn === false) return 'off';
+    return 'neutral';
+}
+
+// Compute effective enabled state for a toggle
+// ptStateMap: Map<identifier, enabled> from the real PM prompt_order
+function calcEffectiveOn(gState, isDirect, ovr, identifier, ptStateMap) {
+    if (ovr !== null) return ovr;
+    if (gState === 'neutral') return ptStateMap.get(identifier) ?? false;
+    return isDirect ? (gState === 'on') : (gState !== 'on');
+}
+
 function applyGroup(pn, gi) {
     const groups = getGroupsForPreset(pn);
     const g      = groups[gi];
     if (!g) return;
+    const gState = getGroupState(g);
+    // neutral group: skip PT modification entirely (let PT keep its own state)
+    if (gState === 'neutral') return;
     try {
         const pm = setupChatCompletionPromptManager(oai_settings);
         for (const t of g.toggles) {
             const entry = pm.getPromptOrderEntry(pm.activeCharacter, t.target);
             if (!entry) continue;
             const ovr = t.override ?? null;
-            entry.enabled = ovr !== null ? ovr : (t.behavior === 'invert') ? !g.isOn : g.isOn;
+            if (ovr !== null) {
+                entry.enabled = ovr;
+            } else {
+                entry.enabled = (t.behavior === 'invert') ? (gState !== 'on') : (gState === 'on');
+            }
             if (pm.tokenHandler?.getCounts) {
                 const counts = pm.tokenHandler.getCounts();
                 counts[t.target] = null;
@@ -235,30 +242,43 @@ function renderTGGroups() {
     // validIds (from prompt_order) can still contain stale entries for prompts
     // that have already been deleted from the prompts array, so we filter
     // against allPromptIds instead to keep toggle groups in sync.
-    //
-    // IMPORTANT: Only filter when allPrompts is non-empty.
-    // If setupChatCompletionPromptManager fails mid-rename and returns [],
-    // allPromptIds would be an empty Set — wiping every toggle and saving.
     const allPromptIds = new Set(allPrompts.map(p => p.identifier));
+
+    // Build a ptStateMap for neutral-group display (enabled state per identifier)
+    const ptStateMap = new Map();
+    try {
+        const pm2 = setupChatCompletionPromptManager(oai_settings);
+        const order2 = (pm2.serviceSettings?.prompt_order || [])
+            .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
+        (order2?.order || []).forEach(e => ptStateMap.set(e.identifier, e.enabled));
+    } catch(e) { /* fallback: ptStateMap stays empty, effectiveOn will default false */ }
+
     const groups = getGroupsForPreset(pn);
+
+    // Fix bug #1: NEVER mutate the original group data during rendering.
+    // Build display-only copies for filtering, and only persist when prompts
+    // truly no longer exist (not just when identifiers temporarily mismatch
+    // because the preset was renamed / reloaded).
     if (allPrompts.length > 0) {
-        let changed = false;
+        let reallyChanged = false;
         groups.forEach(g => {
-            const before = g.toggles.length;
-            g.toggles = g.toggles.filter(t => allPromptIds.has(t.target));
-            if (g.toggles.length !== before) changed = true;
+            const filtered = g.toggles.filter(t => allPromptIds.has(t.target));
+            if (filtered.length !== g.toggles.length) {
+                g.toggles = filtered; // mutate only when prompts are truly gone
+                reallyChanged = true;
+            }
         });
-        if (changed) saveGroups(pn, groups);
+        if (reallyChanged) saveGroups(pn, groups);
     }
 
     if (!groups.length) { area.innerHTML = '<div class="ptm-ph">그룹이 없습니다</div>'; return; }
-    area.innerHTML = groups.map((g, gi) => buildGroupCard(g, gi, pn, allPrompts)).join('');
+    area.innerHTML = groups.map((g, gi) => buildGroupCard(g, gi, pn, allPrompts, ptStateMap)).join('');
     wireGroupCards(area);
 }
 
 // allPrompts passed in from renderTGGroups — no extra manager call needed.
 // Fallback handles any future direct callers.
-function buildGroupCard(g, gi, pn, allPrompts) {
+function buildGroupCard(g, gi, pn, allPrompts, ptStateMap) {
     if (!allPrompts) {
         try {
             allPrompts = setupChatCompletionPromptManager(oai_settings).serviceSettings?.prompts || [];
@@ -266,25 +286,39 @@ function buildGroupCard(g, gi, pn, allPrompts) {
             allPrompts = (getLivePresetData(pn) || openai_settings[openai_setting_names[pn]])?.prompts || [];
         }
     }
+    if (!ptStateMap) ptStateMap = new Map();
     const inToggleReorder = toggleReorderMode === gi;
+
+    // 3-state: 'on' | 'neutral' | 'off'  (migrate legacy boolean)
+    const gState = getGroupState(g);
 
     const rows = g.toggles.map((t, ti) => {
         // Bug fix: use ?? so empty-string names aren't replaced with identifier
         const name     = allPrompts.find(p => p.identifier === t.target)?.name ?? '';
         const isDirect = t.behavior === 'direct';
         const ovr      = t.override ?? null;
-        const effectiveOn = ovr !== null ? ovr : (isDirect ? g.isOn : !g.isOn);
+        const effectiveOn = calcEffectiveOn(gState, isDirect, ovr, t.target, ptStateMap);
 
         let ovrLabel, ovrCls;
-        if (ovr === null)      { ovrLabel = '고정'; ovrCls = 'ptm-tovr-lock'; }
+        if (ovr === null)      { ovrLabel = '—';   ovrCls = 'ptm-tovr-lock'; }
         else if (ovr === true) { ovrLabel = 'On';  ovrCls = 'ptm-tovr-on';  }
         else                   { ovrLabel = 'Off'; ovrCls = 'ptm-tovr-off'; }
+
+        // Effective state display: neutral+no-override → show real PT state in gray
+        let tstateCls, tstateLabel;
+        if (gState === 'neutral' && ovr === null) {
+            tstateCls  = 'ptm-ts-neutral';
+            tstateLabel = effectiveOn ? 'On' : 'Off';
+        } else {
+            tstateCls  = effectiveOn ? 'ptm-ts-on' : 'ptm-ts-off';
+            tstateLabel = effectiveOn ? 'On' : 'Off';
+        }
 
         return `
         <div class="ptm-trow" ${inToggleReorder ? 'data-draggable="true"' : ''} data-gi="${gi}" data-ti="${ti}">
             ${inToggleReorder
                 ? `<span class="ptm-drag-handle" title="드래그하여 이동">⠿</span>`
-                : `<span class="ptm-tstate ${effectiveOn ? 'ptm-ts-on' : 'ptm-ts-off'}">${effectiveOn ? 'On' : 'Off'}</span>`}
+                : `<span class="ptm-tstate ${tstateCls}">${tstateLabel}</span>`}
             <button class="ptm-ibtn ptm-tovr ${ovrCls}" data-gi="${gi}" data-ti="${ti}">${ovrLabel}</button>
             <span class="ptm-tname">${name}</span>
             ${!inToggleReorder ? `<button class="ptm-ibtn ptm-bsel ${isDirect ? 'ptm-bsel-dir' : 'ptm-bsel-inv'}" data-gi="${gi}" data-ti="${ti}">${isDirect ? '동일' : '반전'}</button>` : ''}
@@ -299,13 +333,19 @@ function buildGroupCard(g, gi, pn, allPrompts) {
     const isFirst     = gi === 0;
     const isLast      = gi === groups.length - 1;
 
+    // 3-state button label & class
+    let onoffLabel, onoffCls;
+    if (gState === 'on')      { onoffLabel = 'On';  onoffCls = 'ptm-onoff-on';  }
+    else if (gState === 'off') { onoffLabel = 'Off'; onoffCls = 'ptm-onoff-off'; }
+    else                       { onoffLabel = '—';   onoffCls = 'ptm-onoff-neu'; }
+
     return `
     <div class="ptm-card" data-gi="${gi}">
         <div class="ptm-card-head">
             ${groupReorderMode ? `
                 <button class="ptm-ibtn ptm-grp-up${isFirst ? ' ptm-arr-disabled' : ''}" data-gi="${gi}" ${isFirst ? 'disabled' : ''}>▲</button>
                 <button class="ptm-ibtn ptm-grp-dn${isLast  ? ' ptm-arr-disabled' : ''}" data-gi="${gi}" ${isLast  ? 'disabled' : ''}>▼</button>
-            ` : `<button class="ptm-onoff ${g.isOn ? 'ptm-onoff-on' : 'ptm-onoff-off'}" data-gi="${gi}">${g.isOn ? 'On' : 'Off'}</button>`}
+            ` : `<button class="ptm-onoff ${onoffCls}" data-gi="${gi}" title="${gState === 'neutral' ? '중립 (클릭하여 On)' : gState === 'on' ? 'On (클릭하여 Off)' : 'Off (클릭하여 중립)'}">${onoffLabel}</button>`}
             <span class="ptm-gname">${g.name} <span class="ptm-gcnt">(${toggleCount})</span></span>
             <div class="ptm-gbtns">
                 ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-ibtn ptm-ren-grp" data-gi="${gi}">✏️</button>` : ''}
@@ -353,7 +393,11 @@ function wireGroupCards(area) {
     }));
     area.querySelectorAll('.ptm-onoff').forEach(btn => btn.addEventListener('click', () => {
         const gi = +btn.dataset.gi, pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
-        gs[gi].isOn = !gs[gi].isOn;
+        // Cycle: neutral → on → off → neutral
+        const cur = getGroupState(gs[gi]);
+        const next = cur === 'neutral' ? 'on' : cur === 'on' ? 'off' : 'neutral';
+        gs[gi].state = next;
+        gs[gi].isOn  = (next === 'on'); // keep legacy field in sync
         applyGroup(pn, gi);
         saveGroups(pn, gs);
         renderTGGroups();
@@ -389,7 +433,7 @@ function wireGroupCards(area) {
     area.querySelectorAll('.ptm-bsel').forEach(btn => btn.addEventListener('click', () => {
         const gi = +btn.dataset.gi, ti = +btn.dataset.ti, pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
         gs[gi].toggles[ti].behavior = gs[gi].toggles[ti].behavior === 'direct' ? 'invert' : 'direct';
-        saveGroups(pn, gs); renderTGGroups();
+        applyGroup(pn, gi); saveGroups(pn, gs); renderTGGroups();
     }));
     area.querySelectorAll('.ptm-del-toggle').forEach(btn => btn.addEventListener('click', () => {
         const gi = +btn.dataset.gi, ti = +btn.dataset.ti, pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
@@ -516,7 +560,8 @@ async function copyGroupToPreset(gi) {
     // Build and save the new group
     const newGroup = {
         name:        finalName,
-        isOn:        sourceGroup.isOn,
+        state:       getGroupState(sourceGroup),
+        isOn:        sourceGroup.isOn ?? false,
         showInPopup: sourceGroup.showInPopup ?? false,
         toggles:     matched,
     };
@@ -545,13 +590,22 @@ async function copyGroupToPreset(gi) {
 
 // ── Add toggle modal ──────────────────────────────────────────────────────────
 async function showAddToggleModal(gi) {
-    const pn = getCurrentPreset(), preset = getLivePresetData(pn);
-    if (!preset) return;
-    const gs = getGroupsForPreset(pn), exists = new Set(gs[gi].toggles.map(t => t.target));
-    // Sort prompts A→Z so the picker list is always in predictable order.
-    // Use a copy to avoid mutating the original preset array.
-    const prompts = [...(preset.prompts || [])].sort((a, b) =>
-        (a.name ?? '').localeCompare(b.name ?? '', 'ko'));
+    const pn = getCurrentPreset();
+    if (!pn) { toastr.warning('프리셋을 먼저 선택하세요'); return; }
+    const gs = getGroupsForPreset(pn);
+    if (!gs[gi]) return;
+    const exists = new Set(gs[gi].toggles.map(t => t.target));
+
+    // Use PM or fallback to live preset for the prompt list
+    let prompts;
+    try {
+        prompts = setupChatCompletionPromptManager(oai_settings).serviceSettings?.prompts || [];
+    } catch(e) {
+        const preset = getLivePresetData(pn);
+        prompts = preset?.prompts || [];
+    }
+    if (!prompts.length) { toastr.warning('추가할 수 있는 프롬프트가 없습니다'); return; }
+
     const selectedMap = new Map();
 
     const listHtml = prompts.map((p, idx) => {
@@ -738,13 +792,6 @@ function buildTGDrawer() {
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <div style="display:flex;align-items:center;gap:8px;padding:4px 0 6px;">
-                <button id="ptm-ppc-enable-btn" class="ptm-sm"
-                    style="margin:0;padding:3px 10px;font-weight:700;border-radius:6px;flex-shrink:0;">
-                    🔌 ON
-                </button>
-                <span style="font-size:12px;opacity:0.65;">🤖📋 팝업</span>
-            </div>
             <div id="ptm-tg-area"><div class="ptm-ph">로딩 중...</div></div>
             <div style="display:flex;gap:6px;margin-top:0;align-items:center">
                 <button class="ptm-sm ptm-sm-full" id="ptm-add-group" style="flex:1;margin:0">+ 그룹 추가</button>
@@ -859,7 +906,7 @@ async function performOperation(isMove) {
         if (makeGroup && groupName) {
             const gs = getGroupsForPreset(targetPresetName); let fn = groupName, c = 1;
             while (gs.some(g => g.name === fn)) fn = `${groupName} (${c++})`;
-            gs.push({ name: fn, isOn: false, toggles: newIds.map(id => ({ target: id, behavior: 'direct', override: null })) });
+            gs.push({ name: fn, state: 'neutral', isOn: false, toggles: newIds.map(id => ({ target: id, behavior: 'direct', override: null })) });
             saveGroups(targetPresetName, gs);
             renderTGGroups();
             toastr.success(`${n}개 ${isMove ? '이동' : '복사'} 완료 + 그룹 "${fn}" 생성!`);
@@ -923,7 +970,7 @@ async function performSamePresetMove(n, makeGroup, groupName) {
             const newIds = selected.map(e => e.identifier);
             const gs = getGroupsForPreset(sourcePresetName); let fn = groupName, c = 1;
             while (gs.some(g => g.name === fn)) fn = `${groupName} (${c++})`;
-            gs.push({ name: fn, isOn: false, toggles: newIds.map(id => ({ target: id, behavior: 'direct', override: null })) });
+            gs.push({ name: fn, state: 'neutral', isOn: false, toggles: newIds.map(id => ({ target: id, behavior: 'direct', override: null })) });
             saveGroups(sourcePresetName, gs);
             renderTGGroups();
             toastr.success(`${n}개 순서 변경 완료 + 그룹 "${fn}" 생성!`);
@@ -993,18 +1040,12 @@ function wireTG() {
     document.querySelector('#ptm-tg-drawer .inline-drawer-toggle')?.addEventListener('click', () => {
         setTimeout(renderTGGroups, 0);
     });
-    // PPC popup ON/OFF toggle
-    document.getElementById('ptm-ppc-enable-btn')?.addEventListener('click', () => {
-        setPpcEnabled(!getPpcEnabled());
-    });
-    // Apply initial button appearance
-    updatePpcBtnVisibility();
     document.getElementById('ptm-add-group')?.addEventListener('click', async () => {
         const pn = getCurrentPreset(); if (!pn) { toastr.warning('프리셋을 먼저 선택하세요'); return; }
         const name = await callGenericPopup('새 그룹 이름:', POPUP_TYPE.INPUT, '');
         if (!name?.trim()) return;
         const gs = getGroupsForPreset(pn); if (gs.some(g => g.name === name.trim())) { toastr.warning('같은 이름이 이미 있습니다'); return; }
-        gs.push({ name: name.trim(), isOn: false, showInPopup: false, toggles: [] }); saveGroups(pn, gs); renderTGGroups();
+        gs.push({ name: name.trim(), state: 'neutral', isOn: false, showInPopup: false, toggles: [] }); saveGroups(pn, gs); renderTGGroups();
     });
     document.getElementById('ptm-reorder-btn')?.addEventListener('click', () => {
         groupReorderMode = !groupReorderMode;
@@ -1294,14 +1335,17 @@ function renderPpcLower() {
         if (!visible.length) {
             rowsHtml = `<div style="font-size:12px;opacity:0.55;padding:3px 0 1px;">표시할 그룹 없음</div>`;
         } else {
-            rowsHtml = visible.map(({ g, gi }) => {
-                const bg  = g.isOn ? PPC_ON_BG  : PPC_OFF_BG;
-                const clr = g.isOn ? PPC_ON_CLR : PPC_OFF_CLR;
+        rowsHtml = visible.map(({ g, gi }) => {
+                const gState = getGroupState(g);
+                let bg, clr, lbl;
+                if (gState === 'on')       { bg = PPC_ON_BG;  clr = PPC_ON_CLR;  lbl = 'On';  }
+                else if (gState === 'off') { bg = PPC_OFF_BG; clr = PPC_OFF_CLR; lbl = 'Off'; }
+                else                       { bg = '#888';      clr = '#fff';       lbl = '—';   }
                 return `
                 <div style="display:flex;align-items:center;gap:7px;padding:3px 0;">
                     <button class="ppc-grp-toggle" data-gi="${gi}"
                         style="flex-shrink:0;border:none;border-radius:4px;width:32px;height:20px;font-size:11px;font-weight:700;cursor:pointer;background:${bg};color:${clr};display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;">
-                        ${g.isOn ? 'On' : 'Off'}
+                        ${lbl}
                     </button>
                     <span class="ppc-grp-name" data-gi="${gi}"
                         style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500;cursor:pointer;"
@@ -1344,7 +1388,10 @@ function renderPpcLower() {
         btn.addEventListener('click', e => {
             e.stopPropagation();
             const gi = +btn.dataset.gi, pn2 = getCurrentPreset(), gs = getGroupsForPreset(pn2);
-            gs[gi].isOn = !gs[gi].isOn;
+            const cur = getGroupState(gs[gi]);
+            const next = cur === 'neutral' ? 'on' : cur === 'on' ? 'off' : 'neutral';
+            gs[gi].state = next;
+            gs[gi].isOn  = (next === 'on');
             applyGroup(pn2, gi);
             saveGroups(pn2, gs);
             renderPpcLower();
@@ -1455,25 +1502,32 @@ function buildPpcSubHtml(gi) {
     const pn = getCurrentPreset(), gs = getGroupsForPreset(pn), g = gs[gi];
     if (!g) return '<div style="padding:12px;opacity:0.6;">그룹을 찾을 수 없습니다</div>';
 
-    let allPrompts;
+    let allPrompts, ptStateMap = new Map();
     try {
-        allPrompts = setupChatCompletionPromptManager(oai_settings).serviceSettings?.prompts || [];
+        const pm = setupChatCompletionPromptManager(oai_settings);
+        allPrompts = pm.serviceSettings?.prompts || [];
+        const order = (pm.serviceSettings?.prompt_order || [])
+            .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
+        (order?.order || []).forEach(e => ptStateMap.set(e.identifier, e.enabled));
     } catch(e) {
         const preset = getLivePresetData(pn) || openai_settings[openai_setting_names[pn]];
         allPrompts = preset?.prompts || [];
     }
 
-    const grpBg  = g.isOn ? PPC_ON_BG  : PPC_OFF_BG;
-    const grpClr = g.isOn ? PPC_ON_CLR : PPC_OFF_CLR;
+    const gState = getGroupState(g);
+    let grpBg, grpClr, grpLabel;
+    if (gState === 'on')       { grpBg = PPC_ON_BG;  grpClr = PPC_ON_CLR;  grpLabel = 'On';  }
+    else if (gState === 'off') { grpBg = PPC_OFF_BG; grpClr = PPC_OFF_CLR; grpLabel = 'Off'; }
+    else                       { grpBg = '#888';      grpClr = '#fff';       grpLabel = '—';   }
 
     const rows = g.toggles.map((t, ti) => {
         const name     = allPrompts.find(p => p.identifier === t.target)?.name ?? '';
         const isDirect = t.behavior === 'direct';
         const ovr      = t.override ?? null;
-        const effectOn = ovr !== null ? ovr : (isDirect ? g.isOn : !g.isOn);
+        const effectOn = calcEffectiveOn(gState, isDirect, ovr, t.target, ptStateMap);
 
         let ovrBg, ovrClr, ovrLabel;
-        if (ovr === null)      { ovrLabel = '고정'; ovrBg = 'rgba(150,150,150,0.25)'; ovrClr = '#c0c0c0'; }
+        if (ovr === null)      { ovrLabel = '—';   ovrBg = 'rgba(150,150,150,0.25)'; ovrClr = '#c0c0c0'; }
         else if (ovr === true) { ovrLabel = 'On';  ovrBg = 'rgba(90,184,130,0.25)';  ovrClr = '#6dcc96'; }
         else                   { ovrLabel = 'Off'; ovrBg = 'rgba(184,90,90,0.25)';   ovrClr = '#d07070'; }
 
@@ -1481,8 +1535,15 @@ function buildPpcSubHtml(gi) {
         const bClr = isDirect ? '#c0c0c0' : '#b0a0f0';
 
         const btnStyle = 'border:none;border-radius:3px;width:30px;min-width:30px;height:18px;font-size:10px;font-weight:700;cursor:pointer;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;white-space:nowrap;letter-spacing:-0.3px;';
-        const stBg  = effectOn ? 'rgba(90,184,130,0.2)'   : 'rgba(200,200,200,0.1)';
-        const stClr = effectOn ? '#6dcc96'                 : '#999';
+        // neutral+no-override → gray pill (reflects real PT state)
+        let stBg, stClr;
+        if (gState === 'neutral' && ovr === null) {
+            stBg  = 'rgba(150,150,150,0.18)'; stClr = '#aaa';
+        } else if (effectOn) {
+            stBg  = 'rgba(90,184,130,0.2)';   stClr = '#6dcc96';
+        } else {
+            stBg  = 'rgba(200,200,200,0.1)';   stClr = '#999';
+        }
         return `
         <div style="display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.08);">
             <span style="font-size:10px;width:26px;min-width:26px;height:18px;text-align:center;font-weight:700;border-radius:3px;background:${stBg};color:${stClr};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${effectOn ? 'On' : 'Off'}</span>
@@ -1503,7 +1564,7 @@ function buildPpcSubHtml(gi) {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
             <button class="ppc-sub-grp-toggle"
                 style="border:none;border-radius:4px;width:32px;height:20px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;background:${grpBg};color:${grpClr};display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;">
-                ${g.isOn ? 'On' : 'Off'}
+                ${grpLabel}
             </button>
             <strong style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(g.name)}</strong>
             <button class="ppc-sub-close"
@@ -1526,7 +1587,11 @@ function wirePpcSub(sub, gi) {
     sub.querySelector('.ppc-sub-grp-toggle')?.addEventListener('click', e => {
         e.stopPropagation();
         const gs = getGroupsForPreset(pn);
-        gs[gi].isOn = !gs[gi].isOn;
+        // Cycle: neutral → on → off → neutral
+        const cur = getGroupState(gs[gi]);
+        const next = cur === 'neutral' ? 'on' : cur === 'on' ? 'off' : 'neutral';
+        gs[gi].state = next;
+        gs[gi].isOn  = (next === 'on');
         applyGroup(pn, gi); saveGroups(pn, gs);
         // Re-render sub
         sub.innerHTML = buildPpcSubHtml(gi);
@@ -1551,7 +1616,7 @@ function wirePpcSub(sub, gi) {
         e.stopPropagation();
         const ti = +btn.dataset.ti, gs = getGroupsForPreset(pn);
         gs[gi].toggles[ti].behavior = gs[gi].toggles[ti].behavior === 'direct' ? 'invert' : 'direct';
-        saveGroups(pn, gs);
+        applyGroup(pn, gi); saveGroups(pn, gs);
         sub.innerHTML = buildPpcSubHtml(gi);
         wirePpcSub(sub, gi);
         renderTGGroups();
@@ -1627,8 +1692,6 @@ function injectPpcButton() {
         const sendBtn = document.getElementById('send_but');
         if (sendBtn?.parentElement) sendBtn.parentElement.insertBefore(btn, sendBtn);
     }
-    // Respect the stored ON/OFF setting immediately after injection
-    updatePpcBtnVisibility();
 }
 
 function setupPpcEvents() {
@@ -1683,6 +1746,8 @@ function migrateFromLegacy() {
             const existing = new Set(qpm.presets[presetName].map(g => g.name));
             for (const g of groups) {
                 if (existing.has(g.name)) continue; // skip duplicates
+                // Ensure 3-state field is set
+                if (!g.state) g.state = g.isOn ? 'on' : 'off';
                 qpm.presets[presetName].push(g);
                 migratedGroups++;
             }
