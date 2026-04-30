@@ -1668,11 +1668,28 @@ function mount() {
 }
 
 jQuery(async () => {
-    console.log(`[${extensionName}] Loading...`);
-    try {
-        await initImports();
-        migrateFromLegacy();
-        let c = 0;
-        const t = setInterval(() => { if (mount() || ++c > 50) clearInterval(t); }, 200);
-     
-eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => { renderTGGroups(); applyAllGroups(); }); eventSource.on(event_types.APP_READY, () => { injectPpcButton(); applyAllGroups(); }); setupPpcEvents(); console.log(`[${extensionName}] Loaded`); } catch(err) { console.error(`[${extensionName}] Failed:`, err); } });
+    console.log(`[${extensionName}] Loading...`);
+    try {
+        await initImports();
+        migrateFromLegacy();
+        let c = 0;
+        const t = setInterval(() => { 
+            if (mount() || ++c > 50) clearInterval(t); 
+        }, 200);
+       
+        eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => { 
+            renderTGGroups(); 
+            applyAllGroups(); 
+        });
+       
+        eventSource.on(event_types.APP_READY, () => { 
+            injectPpcButton(); 
+            applyAllGroups(); 
+        });
+        
+        setupPpcEvents();
+        console.log(`[${extensionName}] Loaded`);
+    } catch(err) { 
+        console.error(`[${extensionName}] Failed:`, err); 
+    }
+});
