@@ -250,7 +250,8 @@ functionbuildGroupCard(g, gi, pn, allPrompts, ptStateMap) {
         </div>
         ${!groupReorderMode ? `<button class="ptm-sm ptm-add-toggle${isCollapsed ? ' ptm-hidden' : ''}" data-gi="${gi}" style="width:calc(100% - 12px);margin:2px 6px;box-sizing:border-box;">+ 토글 추가</button>` : ''}
     </div>`;
-    function wireGroupCards(area) {
+}
+function wireGroupCards(area) {
     area.querySelectorAll('.ptm-grp-up').forEach(btn => btn.addEventListener('click', () => {
         const gi = +btn.dataset.gi, pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
         if (gi === 0) return;
@@ -553,8 +554,7 @@ async function copyGroupToPreset(gi) {
         toastr.success(`"${finalName}" 그룹이 [${dstPresetName}]에 복사됐습니다 (${matched.length}개 연결)`);
     }
 }
-
-    // ══════════════════════════════════════════
+// ══════════════════════════════════════════
 // D. Toggle reorder (drag & drop)
 // ══════════════════════════════════════════
 
@@ -893,8 +893,7 @@ function renderPpcLower() {
         });
     });
 }
-
-    // ══════════════════════════════════════════
+// ══════════════════════════════════════════
 // H. PPC — Sub-popup (3-state + PT state)
 // ══════════════════════════════════════════
 
@@ -1173,5 +1172,3 @@ jQuery(async () => {
 
     console.log(`[${extensionName}] Loaded (3-state system)`);
 });
-
-}
