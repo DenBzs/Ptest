@@ -48,19 +48,13 @@ function getTGStore() {
     return extension_settings[TG_KEY];
 }
 
-// 프리셋 이름 변경 시 그룹 데이터 마이그레이션 (Safeguard 추가)
+// 프리셋 이름 변경 시 그룹 데이터 마이그레이션 (이벤트 핸들러에서 조건 체크 후 호출)
 function renamePresetGroups(oldName, newName) {
-    if (!oldName || !newName || oldName === newName) return;
-    // 안전장치: oldName이 프리셋 목록에 존재한다면 단순 '전환(Switch)'이므로 무시
-    if (openai_setting_names && openai_setting_names[oldName] !== undefined) return;
-    
     const s = getTGStore();
-    if (s.presets[oldName] !== undefined && s.presets[newName] === undefined) {
-        s.presets[newName] = s.presets[oldName];
-        delete s.presets[oldName];
-        saveSettingsDebounced();
-        console.log(`[PTM] preset groups renamed: "${oldName}" → "${newName}"`);
-    }
+    s.presets[newName] = s.presets[oldName];
+    delete s.presets[oldName];
+    saveSettingsDebounced();
+    console.log(`[PTM] preset groups renamed: "${oldName}" → "${newName}"`);
 }
 
 function getGroupsForPreset(pn) {
@@ -293,12 +287,12 @@ function buildGroupCard(g, gi, pn, allPrompts, ptStateMap) {
         else if (ovr === true) { ovrLabel = 'On';  ovrCls = 'ptm-tovr-on';  }
         else                   { ovrLabel = 'Off'; ovrCls = 'ptm-tovr-off'; }
 
-        // 수정사항 2 반영: Off 일 때 강제 배경색/텍스트색 지정
+        // 수정: Off 상태일 때 잔잔한 붉은색 강제 지정
         return `
         <div class="ptm-trow" ${inToggleReorder ? 'data-draggable="true"' : ''} data-gi="${gi}" data-ti="${ti}">
             ${inToggleReorder
                 ? `<span class="ptm-drag-handle" title="드래그하여 이동">⠿</span>`
-                : `<span class="ptm-tstate ${effectiveOn ? 'ptm-ts-on' : 'ptm-ts-off'}" style="${effectiveOn ? '' : 'background:#a84f4f;color:#fff;'}">${effectiveOn ? 'On' : 'Off'}</span>`}
+                : `<span class="ptm-tstate ${effectiveOn ? 'ptm-ts-on' : 'ptm-ts-off'}" style="${effectiveOn ? '' : 'background:rgba(168,79,79,0.25);color:#d07070;'}">${effectiveOn ? 'On' : 'Off'}</span>`}
             <button class="ptm-ibtn ptm-tovr ${ovrCls}" data-gi="${gi}" data-ti="${ti}">${ovrLabel}</button>
             <span class="ptm-tname">${escapeHtml(name)}</span>
             ${!inToggleReorder ? `<button class="ptm-ibtn ptm-bsel ${isDirect ? 'ptm-bsel-dir' : 'ptm-bsel-inv'}" data-gi="${gi}" data-ti="${ti}">${isDirect ? '동일' : '반전'}</button>` : ''}
@@ -322,7 +316,6 @@ function buildGroupCard(g, gi, pn, allPrompts, ptStateMap) {
         stateBg = 'rgba(150,150,150,0.3)'; stateClr = '#ddd'; stateLabel = '—'; stateCls = '';
     }
 
-    // 수정사항 3 반영: onoff 버튼 및 ▲▼ 크기 통일
     return `
     <div class="ptm-card" data-gi="${gi}">
         <div class="ptm-card-head">
@@ -1477,7 +1470,7 @@ function buildPpcSubHtml(gi) {
 
         const btnStyle = 'border:none;border-radius:3px;width:30px;min-width:30px;height:18px;font-size:10px;font-weight:700;cursor:pointer;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;white-space:nowrap;letter-spacing:-0.3px;';
         
-        // 수정사항 2 반영: Off 일 때 강제 배경색/텍스트색 지정 (Sub-popup)
+        // 수정: Off 상태일 때 잔잔한 붉은색 강제 지정
         const stBg  = effectOn ? 'rgba(90,184,130,0.2)'   : 'rgba(168,79,79,0.25)';
         const stClr = effectOn ? '#6dcc96'                 : '#d07070';
         return `
@@ -1739,16 +1732,24 @@ jQuery(async () => {
         let c = 0;
         const t = setInterval(() => { if (mount() || ++c > 50) clearInterval(t); }, 200);
         
-        // 수정사항 1 반영: 이름 변경 이벤트 핸들러 업데이트 (Safeguard 사용)
+        // 수정: 명확한 조건의 이름 변경 이벤트 핸들러
         let _lastPresetName = '';
-        eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => { 
-            const newName = getCurrentPreset();
-            if (_lastPresetName && _lastPresetName !== newName) {
+        eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, (newNameArg) => {
+            const newName = (typeof newNameArg === 'string' && newNameArg.trim())
+                ? newNameArg.trim()
+                : getCurrentPreset();
+
+            if (_lastPresetName
+                && newName
+                && _lastPresetName !== newName
+                && getTGStore().presets[_lastPresetName] !== undefined
+                && getTGStore().presets[newName] === undefined
+            ) {
                 renamePresetGroups(_lastPresetName, newName);
             }
             _lastPresetName = newName;
-            renderTGGroups(); 
-            applyAllGroups(); 
+            renderTGGroups();
+            applyAllGroups();
         });
 
         eventSource.on(event_types.APP_READY, () => { injectPpcButton(); applyAllGroups(); });
