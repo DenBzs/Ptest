@@ -1,4 +1,3 @@
-
 // PromptQM — prompt-qm
 
 const extensionName   = 'Ptest';
@@ -290,15 +289,16 @@ function buildGroupCard(g, gi, pn, allPrompts, ptStateMap) {
         else                   { ovrLabel = 'Off'; ovrCls = 'ptm-tovr-off'; }
 
         return `
-       
-            ${inToggleReorder
-                ? `⠿`
-                : `${effectiveOn ? 'On' : 'Off'}`}
-           ${ovrLabel}
-           ${name}
-            ${!inToggleReorder ? `${isDirect ? '동일' : '반전'}` : ''}
-           ✕
-       `;
+            <div class="ptm-trow" data-draggable="${inToggleReorder}" data-gi="${gi}" data-ti="${ti}">
+                ${inToggleReorder
+                    ? `<div class="ptm-drag-handle">⠿</div>`
+                    : `<span class="ptm-ton ${effectiveOn ? 'ptm-ton-on' : 'ptm-ton-off'}">${effectiveOn ? 'On' : 'Off'}</span>`}
+                <button class="ptm-tovr ${ovrCls}" data-gi="${gi}" data-ti="${ti}" title="Override">${ovrLabel}</button>
+                <span class="ptm-tname">${name}</span>
+                ${!inToggleReorder ? `<button class="ptm-bsel ${isDirect ? 'ptm-bsel-dir' : 'ptm-bsel-inv'}" data-gi="${gi}" data-ti="${ti}">${isDirect ? '동일' : '반전'}</button>` : ''}
+                <button class="ptm-del-toggle" data-gi="${gi}" data-ti="${ti}" title="삭제">✕</button>
+            </div>
+        `;
     }).join('');
 
     const collapseKey = `${pn}__${gi}`;
@@ -319,25 +319,31 @@ function buildGroupCard(g, gi, pn, allPrompts, ptStateMap) {
     }
 
     return `
-
-            ${groupReorderMode ? `
-               ▲
-               ▼
-            ` : `${stateLabel}`}
-           ${g.name}(${toggleCount})
-           
-                ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `✏️` : ''}
-                ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `⠿` : ''}
-                ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `📋` : ''}
-                ${!groupReorderMode && !inToggleReorder ? `📌` : ''}
-                ${!groupReorderMode && !inToggleReorder ? `✕` : ''}
-                ${inToggleReorder ? `✓` : ''}
-               ${isCollapsed ? '▸' : '▾'}
-
-            ${rows || '토글 없음'}
-       
-        ${!groupReorderMode ? `+ 토글 추가` : ''}
-   `;
+        <div class="ptm-grp ${isCollapsed ? 'ptm-collapsed' : ''}" data-gi="${gi}">
+            <div class="ptm-grp-head">
+                ${groupReorderMode ? `
+                    <div class="ptm-grp-reorder-btns">
+                        <button class="ptm-grp-up" data-gi="${gi}" ${isFirst ? 'disabled' : ''}>▲</button>
+                        <button class="ptm-grp-dn" data-gi="${gi}" ${isLast ? 'disabled' : ''}>▼</button>
+                    </div>
+                ` : `<button class="ptm-onoff" data-gi="${gi}" style="background:${stateBg};color:${stateClr};border-radius:4px;border:none;width:32px;height:22px;font-size:11px;font-weight:700;cursor:pointer;">${stateLabel}</button>`}
+                <span class="ptm-grp-name">${escapeHtml(g.name)}<span style="opacity:0.6;font-weight:400;font-size:11px;margin-left:4px;">(${toggleCount})</span></span>
+                <div class="ptm-grp-acts">
+                    ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-ren-grp" data-gi="${gi}" title="이름 변경">✏️</button>` : ''}
+                    ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-reorder-grp-btn" data-gi="${gi}" title="순서 변경">⠿</button>` : ''}
+                    ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-copy-grp" data-gi="${gi}" title="다른 프리셋으로 복사">📋</button>` : ''}
+                    ${!groupReorderMode && !inToggleReorder ? `<button class="ptm-popup-pin ${g.showInPopup ? 'active' : ''}" data-gi="${gi}" title="팝업에 표시">📌</button>` : ''}
+                    ${!groupReorderMode && !inToggleReorder ? `<button class="ptm-del-grp" data-gi="${gi}" title="삭제">✕</button>` : ''}
+                    ${inToggleReorder ? `<button class="ptm-toggle-reorder-done" style="color:#6ddb9e;">✓</button>` : ''}
+                    <button class="ptm-collapse-grp" data-cpkey="${collapseKey}">${isCollapsed ? '▸' : '▾'}</button>
+                </div>
+            </div>
+            <div class="ptm-grp-body" style="display:${isCollapsed ? 'none' : 'block'};">
+                <div class="ptm-tlist">${rows || '<div class="ptm-empty-grp">토글 없음</div>'}</div>
+            </div>
+            ${!groupReorderMode ? `<button class="ptm-add-toggle" data-gi="${gi}">+ 토글 추가</button>` : ''}
+        </div>
+    `;
 }
 
 function wireGroupCards(area) {
@@ -455,7 +461,7 @@ async function copyGroupToPreset(gi) {
 
     const presetOpts = Object.keys(openai_setting_names)
         .filter(n => n !== pn && openai_settings[openai_setting_names[n]])
-        .map(n => `${escapeHtml(n)}`)
+        .map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
         .join('');
     if (!presetOpts) { toastr.warning('복사할 다른 프리셋이 없습니다'); return; }
 
@@ -463,13 +469,14 @@ async function copyGroupToPreset(gi) {
         .find(n => n !== pn && openai_settings[openai_setting_names[n]]) || '';
 
     const html = `
-       
-           그룹을 붙여넣을 프롬프트:
-           
+        <div style="text-align:left;">
+            <div>그룹을 붙여넣을 프롬프트:</div>
+            <select id="ptm-cg-dst" class="text_pole" style="width:100%;margin-top:8px;">
                 ${presetOpts}
-
-            토글 ${sourceGroup.toggles.length}개 · 이름이 일치하는 프롬프트에 자동 연결됩니다
-       `;
+            </select>
+            <div style="font-size:12px;opacity:0.7;margin-top:12px;">토글 ${sourceGroup.toggles.length}개 · 이름이 일치하는 프롬프트에 자동 연결됩니다</div>
+        </div>
+    `;
 
     const observer = new MutationObserver(() => {
         const sel = document.getElementById('ptm-cg-dst');
@@ -577,19 +584,26 @@ async function showAddToggleModal(gi) {
     const listHtml = prompts.map((p, idx) => {
         const ex = exists.has(p.identifier);
         return `
-           
-           ${p.name ?? ''}
-            ${ex ? '추가됨' : ''}
-       `;
+            <label style="display:flex;align-items:center;padding:4px;gap:8px;${ex ? 'opacity:0.5;' : ''}">
+                <input type="checkbox" class="ptm-add-cb" data-i="${idx}" data-id="${escapeHtml(p.identifier)}" ${ex ? 'disabled' : ''}>
+                <span>${escapeHtml(p.name ?? '')}</span>
+                ${ex ? '<span style="font-size:10px;color:#aaa;margin-left:auto;">추가됨</span>' : ''}
+            </label>
+        `;
     }).join('');
 
     const html = `
-       
-           전체
-           해제
-           연속
-       
-       ${listHtml}`;
+        <div style="text-align:left;">
+            <div style="margin-bottom:12px;display:flex;gap:6px;">
+                <button id="ptm-mall" class="menu_button menu_button_icon" style="font-size:12px;padding:4px 8px;">전체</button>
+                <button id="ptm-mnone" class="menu_button menu_button_icon" style="font-size:12px;padding:4px 8px;">해제</button>
+                <button id="ptm-mrange" class="menu_button menu_button_icon" style="font-size:12px;padding:4px 8px;" title="체크된 두 항목 사이 모두 선택">연속</button>
+            </div>
+            <div style="max-height:40vh;overflow-y:auto;border:1px solid rgba(128,128,128,0.2);padding:8px;border-radius:4px;">
+                ${listHtml}
+            </div>
+        </div>
+    `;
 
     const observer = new MutationObserver(() => {
         document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
@@ -622,12 +636,34 @@ async function showAddToggleModal(gi) {
         if (mrangeBtn && !mrangeBtn._ptmWired) {
             mrangeBtn._ptmWired = true;
             mrangeBtn.addEventListener('click', () => {
-                if (selectedMap.size a - b);
+                if (selectedMap.size < 2) return;
+                const idxs = Array.from(selectedMap.keys()).sort((a, b) => a - b);
                 const mn = idxs[0], mx = idxs[idxs.length - 1];
                 document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
                     const i = +cb.dataset.i;
-                    if (i >= mn && i gs2[gi].toggles.push({ target: id, behavior: 'direct', override: null }));
-    saveGroups(pn, gs2); renderTGGroups();
+                    if (i >= mn && i <= mx) {
+                        cb.checked = true; 
+                        selectedMap.set(i, cb.dataset.id);
+                    }
+                });
+            });
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    const ok = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: '추가', cancelButton: '취소' });
+    observer.disconnect(); // 메모리 누수 수정 완료
+
+    if (!ok || selectedMap.size === 0) return;
+
+    const gs2 = getGroupsForPreset(pn);
+    selectedMap.forEach((id) => {
+        if (!exists.has(id)) {
+            gs2[gi].toggles.push({ target: id, behavior: 'direct', override: null });
+        }
+    });
+    saveGroups(pn, gs2); 
+    renderTGGroups();
     toastr.success(`${selectedMap.size}개 추가됨`);
 }
 
@@ -668,10 +704,10 @@ async function savePreset(name, preset) {
     return r.json();
 }
 function getPresetOptions() {
-    if (!openai_settings || !openai_setting_names) return '-- 프리셋 없음 --';
-    return '-- 선택 --'
+    if (!openai_settings || !openai_setting_names) return '<option>-- 프리셋 없음 --</option>';
+    return '<option value="">-- 선택 --</option>'
         + Object.keys(openai_setting_names).filter(n => openai_settings[openai_setting_names[n]])
-            .map(n => `${n}`).join('');
+            .map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
 }
 
 // ══════════════════════════════════════════
@@ -683,34 +719,52 @@ function buildMoverDrawer() {
     const el = document.createElement('div');
     el.id = 'ptm-mover-drawer';
     el.innerHTML = `
-
-           토글 복사/이동
-
-               ① 출발 프리셋
-               ${presets}
-
-                   ② 이동할 항목
-                   
-                       전체
-                       해제
-                       연속
-
-               출발 프리셋을 선택하세요
-
-               ③ 도착 프리셋
-               ${presets}
-
-               ④ 삽입 위치 (+ 클릭)
-               도착 프리셋을 선택하세요
-
-                   복사/이동 후 토글 그룹으로 묶기
-
-           항목과 위치를 선택하면 버튼이 활성화됩니다
-           
-               복사
-               이동
-
-   `;
+        <div class="inline-drawer" style="border:1px solid rgba(255,255,255,0.1); border-radius:8px; margin-bottom:12px;">
+            <div class="inline-drawer-toggle inline-drawer-header interactable" tabindex="0">
+                <b>토글 복사/이동</b>
+            </div>
+            <div class="inline-drawer-content" style="padding:12px; font-size:13px;">
+                <div style="display:flex;gap:12px;">
+                    <div style="flex:1;">
+                        <label style="display:block;margin-bottom:4px;font-weight:bold;">① 출발 프리셋</label>
+                        <select id="ptm-src" class="text_pole" style="width:100%;margin-bottom:8px;">${presets}</select>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                            <b>② 이동할 항목</b>
+                            <div style="display:flex;gap:4px;">
+                                <button id="ptm-all" class="menu_button menu_button_icon" style="padding:2px 6px;font-size:11px;">전체</button>
+                                <button id="ptm-none" class="menu_button menu_button_icon" style="padding:2px 6px;font-size:11px;">해제</button>
+                                <button id="ptm-range" class="menu_button menu_button_icon" style="padding:2px 6px;font-size:11px;" title="체크된 두 항목 사이 모두 선택">연속</button>
+                            </div>
+                        </div>
+                        <div id="ptm-src-list" class="ptm-list-box" style="height:200px;overflow-y:auto;border:1px solid rgba(128,128,128,0.2);padding:4px;border-radius:4px;">
+                            <div style="text-align:center;padding:20px;opacity:0.5;">출발 프리셋을 선택하세요</div>
+                        </div>
+                    </div>
+                    <div style="flex:1;">
+                        <label style="display:block;margin-bottom:4px;font-weight:bold;">③ 도착 프리셋</label>
+                        <select id="ptm-dst" class="text_pole" style="width:100%;margin-bottom:8px;">${presets}</select>
+                        <label style="display:block;margin-bottom:4px;font-weight:bold;">④ 삽입 위치 (+ 클릭)</label>
+                        <div id="ptm-dst-list" class="ptm-list-box" style="height:200px;overflow-y:auto;border:1px solid rgba(128,128,128,0.2);padding:4px;border-radius:4px;">
+                            <div style="text-align:center;padding:20px;opacity:0.5;">도착 프리셋을 선택하세요</div>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(128,128,128,0.2);">
+                    <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+                        <input type="checkbox" id="ptm-make-group"> <span>복사/이동 후 토글 그룹으로 묶기</span>
+                    </label>
+                    <div id="ptm-gname-row" class="ptm-hidden" style="margin-bottom:12px;">
+                        <input type="text" id="ptm-gname" class="text_pole" placeholder="새 그룹 이름 입력..." style="width:100%;">
+                    </div>
+                    <div id="ptm-info" style="margin-bottom:8px;text-align:center;font-size:12px;opacity:0.8;color:#a0a0a0;">항목과 위치를 선택하면 버튼이 활성화됩니다</div>
+                    <div style="display:flex;gap:8px;">
+                        <button id="ptm-copy" class="menu_button" style="flex:1;" disabled>복사</button>
+                        <button id="ptm-move" class="menu_button" style="flex:1;" disabled>이동</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
     return el;
 }
 
@@ -718,19 +772,27 @@ function buildTGDrawer() {
     const el = document.createElement('div');
     el.id = 'ptm-tg-drawer';
     el.innerHTML = `
-
-           토글 그룹 관리
-
-                    🔌 ON
-               
-               🤖📋 팝업
-           
-           로딩 중...
-           
-               + 그룹 추가
-               ⠿
-
-   `;
+        <div class="inline-drawer" style="border:1px solid rgba(255,255,255,0.1); border-radius:8px; margin-bottom:12px;">
+            <div class="inline-drawer-toggle inline-drawer-header interactable" tabindex="0">
+                <b>토글 그룹 관리</b>
+                <div style="margin-left:auto;display:flex;gap:8px;">
+                    <button id="ptm-ppc-enable-btn" class="menu_button menu_button_icon" style="font-size:11px;padding:2px 8px;border-radius:12px;background:#5abf82;color:#fff;" title="토글 그룹 On/Off 버튼 표시 여부" onclick="event.stopPropagation()">🔌 ON</button>
+                </div>
+            </div>
+            <div class="inline-drawer-content" style="padding:12px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                    <div style="font-size:12px;opacity:0.7;display:flex;align-items:center;gap:6px;">🤖📋 팝업</div>
+                </div>
+                <div id="ptm-tg-area" style="display:flex;flex-direction:column;gap:8px;min-height:50px;">
+                    <div style="text-align:center;opacity:0.5;padding:20px;">로딩 중...</div>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:12px;">
+                    <button id="ptm-add-group" class="menu_button" style="flex:1;">+ 그룹 추가</button>
+                    <button id="ptm-reorder-btn" class="menu_button menu_button_icon" title="순서 변경 모드">⠿</button>
+                </div>
+            </div>
+        </div>
+    `;
     return el;
 }
 
@@ -741,12 +803,15 @@ function buildTGDrawer() {
 function renderSrcList() {
     if (sourcePresetName) sourceOrderedPrompts = getOrderedPrompts(getLivePresetData(sourcePresetName));
     const el = document.getElementById('ptm-src-list'); if (!el) return;
-    if (!sourceOrderedPrompts.length) { el.innerHTML = '프롬프트 없음'; return; }
+    if (!sourceOrderedPrompts.length) { el.innerHTML = '<div style="text-align:center;opacity:0.5;padding:10px;">프롬프트 없음</div>'; return; }
     el.innerHTML = sourceOrderedPrompts.map((e, i) => {
         const name = e.prompt.name ?? '', chk = selectedSourceIndices.has(i);
         return `
-           #${i + 1}
-           ${e.prompt.marker ? '[고정] ' : ''}${name}`;
+            <div class="ptm-item ${chk ? 'ptm-chked' : ''}">
+                <input type="checkbox" class="ptm-chk" data-i="${i}" ${chk ? 'checked' : ''}>
+                <span style="opacity:0.5;margin-right:6px;font-size:11px;">#${i + 1}</span>
+                <span class="ptm-name">${e.prompt.marker ? '[고정] ' : ''}${escapeHtml(name)}</span>
+            </div>`;
     }).join('');
     el.querySelectorAll('.ptm-chk').forEach(cb => cb.addEventListener('change', ev => {
         const i = +ev.target.dataset.i;
@@ -759,7 +824,7 @@ function renderSrcList() {
 function renderDstList() {
     if (targetPresetName) targetOrderedPrompts = getOrderedPrompts(getLivePresetData(targetPresetName));
     const el = document.getElementById('ptm-dst-list'); if (!el) return;
-    const slot = i => `+`;
+    const slot = i => `<div class="ptm-slot ${insertPosition === i ? 'active' : ''}" data-slot="${i}">+</div>`;
     if (!targetOrderedPrompts.length) {
         el.innerHTML = slot(0);
         el.querySelector('.ptm-slot').addEventListener('click', () => selectSlot(0));
@@ -767,8 +832,10 @@ function renderDstList() {
     }
     el.innerHTML = slot(0) + targetOrderedPrompts.map((e, i) => {
         const name = e.prompt.name ?? '';
-        return `#${i + 1}
-           ${e.prompt.marker ? '[고정] ' : ''}${name}${slot(i + 1)}`;
+        return `<div class="ptm-ditem">
+            <span style="opacity:0.5;margin-right:6px;font-size:11px;min-width:20px;display:inline-block;">#${i + 1}</span>
+            <span class="ptm-name">${e.prompt.marker ? '[고정] ' : ''}${escapeHtml(name)}</span>
+        </div>${slot(i + 1)}`;
     }).join('');
     el.querySelectorAll('.ptm-slot').forEach(s => s.addEventListener('click', () => selectSlot(+s.dataset.slot)));
 }
@@ -783,44 +850,95 @@ function updateButtons() {
     if (!sourcePresetName) info.textContent = '출발 프리셋을 선택하세요';
     else if (!n) info.textContent = '이동할 항목을 체크하세요';
     else if (!targetPresetName) info.textContent = `${n}개 선택됨 · 도착 프리셋을 선택하세요`;
-    else if (insertPosition a - b).map(i => sourceOrderedPrompts[i]).filter(Boolean);
+    else if (insertPosition < 0) info.textContent = `${n}개 선택됨 · 삽입 위치를 선택하세요`; // 잘려나갔던 조건문 복구
+    else info.textContent = `${n}개 선택됨 · 준비 완료`;
+}
+
+// ══════════════════════════════════════════
+// G. Mover operations (Syntax Error 수정 완료)
+// ══════════════════════════════════════════
+
+async function performOperation(isMove) {
+    const makeGroup = document.getElementById('ptm-make-group')?.checked;
+    const groupName = document.getElementById('ptm-gname')?.value?.trim() || '';
+    if (makeGroup && !groupName) { toastr.warning('그룹 이름을 입력하세요'); return; }
+
+    const n = selectedSourceIndices.size;
+    if (isMove && sourcePresetName === targetPresetName) {
+        return performSamePresetMove(n, makeGroup, groupName);
+    }
+
+    const srcIdx = openai_setting_names[sourcePresetName];
+    const dstIdx = openai_setting_names[targetPresetName];
+    
+    // 잘려나갔던 배열 sort 화살표 함수 복구
+    const selected = [...selectedSourceIndices].sort((a, b) => a - b).map(i => sourceOrderedPrompts[i]).filter(Boolean);
     const tp = JSON.parse(JSON.stringify(openai_settings[dstIdx]));
-    tp.prompts = tp.prompts || []; tp.prompt_order = tp.prompt_order || [];
+    
+    tp.prompts = tp.prompts || []; 
+    tp.prompt_order = tp.prompt_order || [];
     const existingIds = new Set(tp.prompts.map(p => p.identifier)), newIds = [];
     const go = tp.prompt_order.find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
+    
     const baseInsertIdx = (() => {
         if (!go?.order || insertPosition === 0) return 0;
         const beforeId = targetOrderedPrompts[insertPosition - 1]?.identifier;
         const rawIdx = beforeId ? go.order.findIndex(e => e.identifier === beforeId) : -1;
         return rawIdx >= 0 ? rawIdx + 1 : go.order.length;
     })();
+    
     selected.forEach((entry, offset) => {
         const pd = JSON.parse(JSON.stringify(entry.prompt));
         let id = pd.identifier;
-        if (existingIds.has(id)) { let c = 1, base = id.replace(/_\d+$/, ''); while (existingIds.has(`${base}_${c}`)) c++; id = `${base}_${c}`; pd.identifier = id; pd.name = `${pd.name || entry.identifier} (${c})`; }
+        if (existingIds.has(id)) { 
+            let c = 1, base = id.replace(/_\d+$/, ''); 
+            while (existingIds.has(`${base}_${c}`)) c++; 
+            id = `${base}_${c}`; 
+            pd.identifier = id; 
+            pd.name = `${pd.name || entry.identifier} (${c})`; 
+        }
         existingIds.add(id); newIds.push(id); tp.prompts.push(pd);
         if (go?.order) go.order.splice(baseInsertIdx + offset, 0, { identifier: id, enabled: true });
         else tp.prompt_order.push({ character_id: GLOBAL_DUMMY_ID, order: [{ identifier: id, enabled: true }] });
-        for (const oe of tp.prompt_order) if (String(oe.character_id) !== String(GLOBAL_DUMMY_ID) && oe.order) oe.order.push({ identifier: id, enabled: true });
+        for (const oe of tp.prompt_order) {
+            if (String(oe.character_id) !== String(GLOBAL_DUMMY_ID) && oe.order) {
+                oe.order.push({ identifier: id, enabled: true });
+            }
+        }
     });
+    
     try {
-        await savePreset(targetPresetName, tp); openai_settings[dstIdx] = tp;
+        await savePreset(targetPresetName, tp); 
+        openai_settings[dstIdx] = tp;
         if (isMove && sourcePresetName !== targetPresetName) {
             const sp = JSON.parse(JSON.stringify(openai_settings[srcIdx])), rem = new Set(selected.map(e => e.identifier));
             sp.prompts = sp.prompts.filter(p => !rem.has(p.identifier));
-            if (sp.prompt_order) for (const o of sp.prompt_order) if (o.order) o.order = o.order.filter(e => !rem.has(e.identifier));
-            await savePreset(sourcePresetName, sp); openai_settings[srcIdx] = sp;
-            if (sourcePresetName === getCurrentPreset()) { oai_settings.prompts = sp.prompts; oai_settings.prompt_order = sp.prompt_order; }
+            if (sp.prompt_order) {
+                for (const o of sp.prompt_order) {
+                    if (o.order) o.order = o.order.filter(e => !rem.has(e.identifier));
+                }
+            }
+            await savePreset(sourcePresetName, sp); 
+            openai_settings[srcIdx] = sp;
+            if (sourcePresetName === getCurrentPreset()) { 
+                oai_settings.prompts = sp.prompts; 
+                oai_settings.prompt_order = sp.prompt_order; 
+            }
         }
-        if (targetPresetName === getCurrentPreset()) { oai_settings.prompts = tp.prompts; oai_settings.prompt_order = tp.prompt_order; }
+        if (targetPresetName === getCurrentPreset()) { 
+            oai_settings.prompts = tp.prompts; 
+            oai_settings.prompt_order = tp.prompt_order; 
+        }
         if (makeGroup && groupName) {
-            const gs = getGroupsForPreset(targetPresetName); let fn = groupName, c = 1;
+            const gs = getGroupsForPreset(targetPresetName); 
+            let fn = groupName, c = 1;
             while (gs.some(g => g.name === fn)) fn = `${groupName} (${c++})`;
             gs.push({ name: fn, state: 'neutral', toggles: newIds.map(id => ({ target: id, behavior: 'direct', override: null })) });
             saveGroups(targetPresetName, gs);
             renderTGGroups();
             toastr.success(`${n}개 ${isMove ? '이동' : '복사'} 완료 + 그룹 "${fn}" 생성!`);
         } else toastr.success(`${n}개 ${isMove ? '이동' : '복사'} 완료`);
+        
         selectedSourceIndices.clear(); insertPosition = -1;
         const cb = document.getElementById('ptm-make-group'); if (cb) cb.checked = false;
         document.getElementById('ptm-gname-row')?.classList.add('ptm-hidden');
@@ -832,6 +950,7 @@ function updateButtons() {
 
 async function performSamePresetMove(n, makeGroup, groupName) {
     const srcIdx = openai_setting_names[sourcePresetName];
+    // 잘려나갔던 화살표 함수 복구
     const selected = [...selectedSourceIndices].sort((a, b) => a - b).map(i => sourceOrderedPrompts[i]).filter(Boolean);
     const selectedSet = new Set(selected.map(e => e.identifier));
     const sp = JSON.parse(JSON.stringify(openai_settings[srcIdx]));
@@ -859,7 +978,17 @@ async function performSamePresetMove(n, makeGroup, groupName) {
             }
         } else {
             let removedBefore = 0;
-            for (let i = 0; i ({ identifier: e.identifier, enabled: e.enabled }))
+            // 잘려나갔던 조건문 복구
+            for (let i = 0; i < insertPosition; i++) {
+                const id = targetOrderedPrompts[i]?.identifier;
+                if (id && selectedSet.has(id)) removedBefore++;
+            }
+            adjPos = insertPosition - removedBefore;
+            if (adjPos < 0) adjPos = 0;
+        }
+
+        const toInsert = isGlobal
+            ? selected.map(e => ({ identifier: e.identifier, enabled: e.enabled }))
             : selected.map(e => ({ identifier: e.identifier, enabled: true }));
         filtered.splice(adjPos, 0, ...toInsert);
         oe.order = filtered;
@@ -925,9 +1054,24 @@ function wireMover() {
     document.getElementById('ptm-none')?.addEventListener('click', () => {
         document.querySelectorAll('#ptm-src-list .ptm-chk').forEach(cb => { cb.checked = false; cb.closest('.ptm-item').classList.remove('ptm-chked'); }); selectedSourceIndices.clear(); updateButtons();
     });
+    
+    // 잘려나갔던 화살표 함수/루프 복구
     document.getElementById('ptm-range')?.addEventListener('click', () => {
-        if (selectedSourceIndices.size a - b), mn = s[0], mx = s[s.length - 1];
-        for (let i = mn; i { const i = +cb.dataset.i; if (i >= mn && i {
+        if (selectedSourceIndices.size < 2) return;
+        const s = [...selectedSourceIndices].sort((a, b) => a - b);
+        const mn = s[0], mx = s[s.length - 1];
+        document.querySelectorAll('#ptm-src-list .ptm-chk').forEach(cb => {
+            const i = +cb.dataset.i;
+            if (i >= mn && i <= mx) {
+                cb.checked = true;
+                selectedSourceIndices.add(i);
+                cb.closest('.ptm-item').classList.add('ptm-chked');
+            }
+        });
+        updateButtons();
+    });
+
+    document.getElementById('ptm-make-group')?.addEventListener('change', e => {
         document.getElementById('ptm-gname-row')?.classList[e.target.checked ? 'remove' : 'add']('ptm-hidden');
         if (e.target.checked) document.getElementById('ptm-gname')?.focus();
     });
@@ -974,11 +1118,23 @@ function wireTGReorder() {
         return [...area.querySelectorAll(`.ptm-trow[data-gi="${gi}"][data-draggable="true"]`)];
     }
 
+    // 잘려나갔던 조건문 복구
     function applyPositions(fromTi, toTi, rows, dragEl, rowH) {
         rows.forEach((r, i) => {
             if (r === dragEl) return;
             let shift = 0;
-            if (fromTi fromTi && i= toTi && i {
+            if (fromTi < toTi && i > fromTi && i <= toTi) {
+                shift = -rowH;
+            } else if (fromTi > toTi && i >= toTi && i < fromTi) {
+                shift = rowH;
+            }
+            r.style.transform = shift !== 0 ? `translateY(${shift}px)` : '';
+            r.style.transition = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+        });
+    }
+
+    function resetStyles(rows) {
+        rows.forEach(r => {
             r.style.transform  = '';
             r.style.transition = '';
             r.style.position   = '';
@@ -1128,15 +1284,15 @@ function getOrCreatePpcPopup() {
         min-width:200px;
     `;
     popup.innerHTML = `
-<div id="ppc-upper" style="padding:12px 14px;"></div>
-<div id="ppc-lower" style="padding:12px 14px;"></div>
-<div id="ppc-theme-bar" style="display:none;padding:8px 14px;gap:6px;flex-wrap:wrap;justify-content:center;">
+        <div id="ppc-upper" style="padding:12px 14px;"></div>
+        <div id="ppc-lower" style="padding:12px 14px;"></div>
+        <div id="ppc-theme-bar" style="display:none;padding:8px 14px;gap:6px;flex-wrap:wrap;justify-content:center;">
             ${Object.entries(PPC_THEMES).map(([k,t]) =>
                 `<button class="ppc-theme-btn" data-theme="${k}" title="${t.title}" style="border:none;background:none;font-size:20px;cursor:pointer;padding:4px;border-radius:4px;transition:all 0.2s;">
                     ${t.label}
-               </button>`
+                </button>`
             ).join('')}
-       </div>
+        </div>
     `;
     popup.querySelectorAll('.ppc-theme-btn').forEach(btn => {
         btn.addEventListener('click', e => {
@@ -1219,14 +1375,14 @@ function renderPpcLower() {
                     bg = 'rgba(150,150,150,0.3)'; clr = '#999'; label = '—';
                 }
                 return `
-<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.05);">
-                    <button class="ppc-grp-toggle" data-gi="${gi}" style="border:none;border-radius:4px;background:${bg};color:${clr};width:36px;height:22px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">
-                        ${label}
-                    </button>
-                    <span class="ppc-grp-name" data-gi="${gi}" style="flex:1;cursor:pointer;font-size:13px;user-select:none;">
-                        ${escapeHtml(g.name)}
-                    </span>
-               </div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.05);">
+                        <button class="ppc-grp-toggle" data-gi="${gi}" style="border:none;border-radius:4px;background:${bg};color:${clr};width:36px;height:22px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">
+                            ${label}
+                        </button>
+                        <span class="ppc-grp-name" data-gi="${gi}" style="flex:1;cursor:pointer;font-size:13px;user-select:none;">
+                            ${escapeHtml(g.name)}
+                        </span>
+                    </div>
                 `;
             }).join('');
         }
@@ -1419,34 +1575,32 @@ function buildPpcSubHtml(gi) {
         const stBg  = effectOn ? 'rgba(90,184,130,0.2)'   : 'rgba(200,200,200,0.1)';
         const stClr = effectOn ? '#6dcc96'                 : '#999';
         return `
-       <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.05);">
-           <span style="font-size:10px;font-weight:700;color:${stClr};background:${stBg};padding:2px 6px;border-radius:3px;min-width:24px;text-align:center;">${effectOn ? 'On' : 'Off'}</span>
-           <button class="ppc-sub-ovr" data-ti="${ti}" style="${btnStyle}background:${ovrBg};color:${ovrClr};">
-                ${ovrLabel}
-           </button>
-           <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(name)}</span>
-           <button class="ppc-sub-bsel" data-ti="${ti}" style="${btnStyle}background:${bBg};color:${bClr};">
-                ${isDirect ? '동일' : '반전'}
-           </button>
-       </div>
+            <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.05);">
+                <span style="font-size:10px;font-weight:700;color:${stClr};background:${stBg};padding:2px 6px;border-radius:3px;min-width:24px;text-align:center;">${effectOn ? 'On' : 'Off'}</span>
+                <button class="ppc-sub-ovr" data-ti="${ti}" style="${btnStyle}background:${ovrBg};color:${ovrClr};">
+                    ${ovrLabel}
+                </button>
+                <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(name)}</span>
+                <button class="ppc-sub-bsel" data-ti="${ti}" style="${btnStyle}background:${bBg};color:${bClr};">
+                    ${isDirect ? '동일' : '반전'}
+                </button>
+            </div>
         `;
     }).join('');
 
     return `
-<div style="padding:14px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <div style="display:flex;align-items:center;gap:8px;">
-                <button class="ppc-sub-grp-toggle" style="border:none;border-radius:4px;background:${grpBg};color:${grpClr};width:36px;height:22px;font-size:11px;font-weight:700;cursor:pointer;">
-                ${grpLabel}
-                </button>
-           </div>
-           <span style="flex:1;font-weight:600;font-size:14px;margin:0 8px;">${escapeHtml(g.name)}</span>
-           <button class="ppc-sub-close" style="border:none;background:none;font-size:18px;cursor:pointer;padding:0;line-height:1;">✕</button>
-        </div>
-
+        <div style="padding:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <button class="ppc-sub-grp-toggle" style="border:none;border-radius:4px;background:${grpBg};color:${grpClr};width:36px;height:22px;font-size:11px;font-weight:700;cursor:pointer;">
+                    ${grpLabel}
+                    </button>
+                </div>
+                <span style="flex:1;font-weight:600;font-size:14px;margin:0 8px;">${escapeHtml(g.name)}</span>
+                <button class="ppc-sub-close" style="border:none;background:none;font-size:18px;cursor:pointer;padding:0;line-height:1;">✕</button>
+            </div>
             ${rows || '<div style="padding:12px;text-align:center;opacity:0.5;font-size:12px;">토글 없음</div>'}
-       </div>
-   </div>
+        </div>
     `;
 }
 
@@ -1668,28 +1822,28 @@ function mount() {
 }
 
 jQuery(async () => {
-    console.log(`[${extensionName}] Loading...`);
-    try {
-        await initImports();
-        migrateFromLegacy();
-        let c = 0;
-        const t = setInterval(() => { 
-            if (mount() || ++c > 50) clearInterval(t); 
-        }, 200);
-       
-        eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => { 
-            renderTGGroups(); 
-            applyAllGroups(); 
-        });
-       
-        eventSource.on(event_types.APP_READY, () => { 
-            injectPpcButton(); 
-            applyAllGroups(); 
-        });
-        
-        setupPpcEvents();
-        console.log(`[${extensionName}] Loaded`);
-    } catch(err) { 
-        console.error(`[${extensionName}] Failed:`, err); 
-    }
+    console.log(`[${extensionName}] Loading...`);
+    try {
+        await initImports();
+        migrateFromLegacy();
+        let c = 0;
+        const t = setInterval(() => { 
+            if (mount() || ++c > 50) clearInterval(t); 
+        }, 200);
+       
+        eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => { 
+            renderTGGroups(); 
+            applyAllGroups(); 
+        });
+       
+        eventSource.on(event_types.APP_READY, () => { 
+            injectPpcButton(); 
+            applyAllGroups(); 
+        });
+        
+        setupPpcEvents();
+        console.log(`[${extensionName}] Loaded`);
+    } catch(err) { 
+        console.error(`[${extensionName}] Failed:`, err); 
+    }
 });
