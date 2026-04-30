@@ -47,6 +47,22 @@ function getTGStore() {
     if (!extension_settings[TG_KEY]) extension_settings[TG_KEY] = { presets: {} };
     return extension_settings[TG_KEY];
 }
+
+// 프리셋 이름 변경 시 그룹 데이터 마이그레이션 (Safeguard 추가)
+function renamePresetGroups(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return;
+    // 안전장치: oldName이 프리셋 목록에 존재한다면 단순 '전환(Switch)'이므로 무시
+    if (openai_setting_names && openai_setting_names[oldName] !== undefined) return;
+    
+    const s = getTGStore();
+    if (s.presets[oldName] !== undefined && s.presets[newName] === undefined) {
+        s.presets[newName] = s.presets[oldName];
+        delete s.presets[oldName];
+        saveSettingsDebounced();
+        console.log(`[PTM] preset groups renamed: "${oldName}" → "${newName}"`);
+    }
+}
+
 function getGroupsForPreset(pn) {
     const s = getTGStore();
     if (!s.presets[pn]) s.presets[pn] = [];
@@ -188,11 +204,10 @@ function applyGroup(pn, gi) {
             if (!entry) continue;
             const ovr = t.override ?? null;
             
-            // 3-state logic
             if (ovr !== null) {
                 entry.enabled = ovr;
             } else if (g.state === 'neutral') {
-                continue; // neutral: leave PT state alone
+                continue; 
             } else {
                 const isDirect = t.behavior === 'direct';
                 entry.enabled = isDirect ? (g.state === 'on') : (g.state !== 'on');
@@ -278,11 +293,12 @@ function buildGroupCard(g, gi, pn, allPrompts, ptStateMap) {
         else if (ovr === true) { ovrLabel = 'On';  ovrCls = 'ptm-tovr-on';  }
         else                   { ovrLabel = 'Off'; ovrCls = 'ptm-tovr-off'; }
 
+        // 수정사항 2 반영: Off 일 때 강제 배경색/텍스트색 지정
         return `
         <div class="ptm-trow" ${inToggleReorder ? 'data-draggable="true"' : ''} data-gi="${gi}" data-ti="${ti}">
             ${inToggleReorder
                 ? `<span class="ptm-drag-handle" title="드래그하여 이동">⠿</span>`
-                : `<span class="ptm-tstate ${effectiveOn ? 'ptm-ts-on' : 'ptm-ts-off'}">${effectiveOn ? 'On' : 'Off'}</span>`}
+                : `<span class="ptm-tstate ${effectiveOn ? 'ptm-ts-on' : 'ptm-ts-off'}" style="${effectiveOn ? '' : 'background:#a84f4f;color:#fff;'}">${effectiveOn ? 'On' : 'Off'}</span>`}
             <button class="ptm-ibtn ptm-tovr ${ovrCls}" data-gi="${gi}" data-ti="${ti}">${ovrLabel}</button>
             <span class="ptm-tname">${escapeHtml(name)}</span>
             ${!inToggleReorder ? `<button class="ptm-ibtn ptm-bsel ${isDirect ? 'ptm-bsel-dir' : 'ptm-bsel-inv'}" data-gi="${gi}" data-ti="${ti}">${isDirect ? '동일' : '반전'}</button>` : ''}
@@ -306,13 +322,14 @@ function buildGroupCard(g, gi, pn, allPrompts, ptStateMap) {
         stateBg = 'rgba(150,150,150,0.3)'; stateClr = '#ddd'; stateLabel = '—'; stateCls = '';
     }
 
+    // 수정사항 3 반영: onoff 버튼 및 ▲▼ 크기 통일
     return `
     <div class="ptm-card" data-gi="${gi}">
         <div class="ptm-card-head">
             ${groupReorderMode ? `
-                <button class="ptm-ibtn ptm-grp-up${isFirst ? ' ptm-arr-disabled' : ''}" data-gi="${gi}" ${isFirst ? 'disabled' : ''}>▲</button>
-                <button class="ptm-ibtn ptm-grp-dn${isLast  ? ' ptm-arr-disabled' : ''}" data-gi="${gi}" ${isLast  ? 'disabled' : ''}>▼</button>
-            ` : `<button class="ptm-onoff ${stateCls}" data-gi="${gi}" style="background:${stateBg};color:${stateClr}">${stateLabel}</button>`}
+                <button class="ptm-ibtn ptm-grp-up${isFirst ? ' ptm-arr-disabled' : ''}" data-gi="${gi}" ${isFirst ? 'disabled' : ''} style="height:24px;min-width:36px;">▲</button>
+                <button class="ptm-ibtn ptm-grp-dn${isLast  ? ' ptm-arr-disabled' : ''}" data-gi="${gi}" ${isLast  ? 'disabled' : ''} style="height:24px;min-width:36px;">▼</button>
+            ` : `<button class="ptm-onoff ${stateCls}" data-gi="${gi}" style="background:${stateBg};color:${stateClr};width:36px;height:24px;min-width:36px;font-size:12px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;">${stateLabel}</button>`}
             <span class="ptm-gname">${escapeHtml(g.name)} <span class="ptm-gcnt">(${toggleCount})</span></span>
             <div class="ptm-gbtns">
                 ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-ibtn ptm-ren-grp" data-gi="${gi}">✏️</button>` : ''}
@@ -359,7 +376,6 @@ function wireGroupCards(area) {
         renderTGGroups();
     }));
     
-    // 3-state Cycle
     area.querySelectorAll('.ptm-onoff').forEach(btn => btn.addEventListener('click', () => {
         const gi = +btn.dataset.gi, pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
         const cur = gs[gi].state;
@@ -1460,8 +1476,10 @@ function buildPpcSubHtml(gi) {
         const bClr = isDirect ? '#c0c0c0' : '#b0a0f0';
 
         const btnStyle = 'border:none;border-radius:3px;width:30px;min-width:30px;height:18px;font-size:10px;font-weight:700;cursor:pointer;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;white-space:nowrap;letter-spacing:-0.3px;';
-        const stBg  = effectOn ? 'rgba(90,184,130,0.2)'   : 'rgba(200,200,200,0.1)';
-        const stClr = effectOn ? '#6dcc96'                 : '#999';
+        
+        // 수정사항 2 반영: Off 일 때 강제 배경색/텍스트색 지정 (Sub-popup)
+        const stBg  = effectOn ? 'rgba(90,184,130,0.2)'   : 'rgba(168,79,79,0.25)';
+        const stClr = effectOn ? '#6dcc96'                 : '#d07070';
         return `
         <div style="display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.08);">
             <span style="font-size:10px;width:26px;min-width:26px;height:18px;text-align:center;font-weight:700;border-radius:3px;background:${stBg};color:${stClr};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${effectOn ? 'On' : 'Off'}</span>
@@ -1637,7 +1655,6 @@ function migrateFromLegacy() {
     try {
         const qpm = getTGStore();
         
-        // 1. Convert any old boolean 'isOn' to 'state' (3-state logic)
         let statesMigrated = 0;
         for (const [presetName, groups] of Object.entries(qpm.presets || {})) {
             if (!Array.isArray(groups)) continue;
@@ -1656,7 +1673,6 @@ function migrateFromLegacy() {
             console.log(`[${extensionName}] Migrated ${statesMigrated} groups to 3-state system`);
         }
 
-        // 2. Legacy Migration
         const LEGACY_KEY = 'prompt-toggle-manager';
         const legacy = extension_settings[LEGACY_KEY];
         if (!legacy?.presets) return; 
@@ -1671,7 +1687,6 @@ function migrateFromLegacy() {
             for (const g of groups) {
                 if (existing.has(g.name)) continue; 
                 
-                // Add the group converting isOn to state
                 const newGroup = {
                     ...g,
                     state: typeof g.isOn === 'boolean' ? (g.isOn ? 'on' : 'off') : 'neutral',
@@ -1723,7 +1738,19 @@ jQuery(async () => {
         migrateFromLegacy();
         let c = 0;
         const t = setInterval(() => { if (mount() || ++c > 50) clearInterval(t); }, 200);
-        eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => { renderTGGroups(); applyAllGroups(); });
+        
+        // 수정사항 1 반영: 이름 변경 이벤트 핸들러 업데이트 (Safeguard 사용)
+        let _lastPresetName = '';
+        eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => { 
+            const newName = getCurrentPreset();
+            if (_lastPresetName && _lastPresetName !== newName) {
+                renamePresetGroups(_lastPresetName, newName);
+            }
+            _lastPresetName = newName;
+            renderTGGroups(); 
+            applyAllGroups(); 
+        });
+
         eventSource.on(event_types.APP_READY, () => { injectPpcButton(); applyAllGroups(); });
         setupPpcEvents();
         console.log(`[${extensionName}] Loaded`);
