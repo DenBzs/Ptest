@@ -3,10 +3,10 @@
     "loading_order": 9,
     "requires": [],
     "optional": [],
-    "js": "index.js",
-    "css": "style.css",
+    "js": "index-1.js",
+    "css": "style-1.css",
     "author": "custom",
     "version": "1.1",
-    "homePage": "https://github.com/DenBzs/Direction-Manager-DB",
+    "homePage": "https://github.com/DenBzs/Ptest",
     "auto_update": false
 }
