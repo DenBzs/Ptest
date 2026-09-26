@@ -861,7 +861,11 @@ function closeCompactUIPopup() {
     }
 
     if (compactUIButton) {
-        compactUIButton.removeClass("dm-compact--hasPopup");
+        // 클래스 대신 속성으로 표시: 서드파티 UI 커스텀 스크립트(예: 재단사)가
+        // 버튼 classList를 기반으로 고유 키를 계산하는 경우, 클래스가 늘었다 줄었다
+        // 하면 팝업 열림/닫힘에 따라 다른 버튼으로 인식되어 저장된 위치 설정이
+        // 초기화되는 문제가 생길 수 있다. data 속성은 그런 키 계산에 영향을 주지 않는다.
+        compactUIButton.removeAttr("data-dm-popup-open");
     }
 
     $(document).off("click.compactUI");
@@ -878,7 +882,7 @@ function showCompactUIPopup() {
     currentScope = settings.lastScope || "chat";
     ensureUsableCurrentScope();
 
-    compactUIButton.addClass("dm-compact--hasPopup");
+    compactUIButton.attr("data-dm-popup-open", "true");
 
     const popupHtml = `
         <div class="dm-compact--popup">
