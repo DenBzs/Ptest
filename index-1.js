@@ -7,14 +7,40 @@ import { Popup } from "../../../popup.js";
 const extensionName = "Direction-Manager-DB";
 const LOG_PREFIX = "[🪄전개지시M]";
 
-// 기본 Direction 프롬프트
-const DEFAULT_DIRECTION_PROMPT = `<direction>
+// 기본 Direction 프롬프트 (범위별로 따로 관리)
+// - 채팅: 예전부터 쓰던 "다음 채팅에 반영할 지시" 문구를 그대로 유지
+// - 전역/캐릭터: 채팅용 문구의 핵심 지침(직접 인용하지 말고 자연스럽게 녹여낼 것)을
+//   각자의 목적에 맞게 반영해서 새로 작성
+const DEFAULT_DIRECTION_PROMPT_CHAT = `<direction>
 - Resume the story based on the director's instructions below.
 - The director only provides drafts; refine them into natural prose instead of directly quoting the sentences.
 - Creatively construct and fill in any parts lacking persuasive causality so that the narrative suggested by the director unfolds smoothly.
 
 [Direction(If blank, develop the story as you see fit): {{direction}}]
 </direction>`;
+
+const DEFAULT_DIRECTION_PROMPT_GLOBAL = `<format_rules>
+- These are standing formatting/style rules for every reply in this roleplay. Follow them exactly, without exception, for as long as they are enabled below.
+- Do not quote or restate these rules in your reply; just apply them silently.
+
+{{direction}}
+</format_rules>`;
+
+const DEFAULT_DIRECTION_PROMPT_CHAR = `<character_notes>
+- The following are ongoing notes about the current situation, emotions, personality, or world details that apply to this conversation for the next several turns.
+- Treat them as established fact and weave them naturally into the story; do not quote them directly or announce that you received notes.
+
+{{direction}}
+</character_notes>`;
+
+// 구버전(v4 이전) 호환용 별칭: 그때는 프롬프트가 하나였고, 그 기본값이 지금의 "채팅" 기본값과 같다.
+const DEFAULT_DIRECTION_PROMPT = DEFAULT_DIRECTION_PROMPT_CHAT;
+
+const DEFAULT_DIRECTION_PROMPTS = {
+    global: DEFAULT_DIRECTION_PROMPT_GLOBAL,
+    char: DEFAULT_DIRECTION_PROMPT_CHAR,
+    chat: DEFAULT_DIRECTION_PROMPT_CHAT,
+};
 
 function defaultPlaceholderState() {
     return {
@@ -24,7 +50,7 @@ function defaultPlaceholderState() {
     };
 }
 
-// 범위별 프롬프트 라벨 (AI가 성격이 다른 지시임을 구분하도록)
+// 범위별 프롬프트 라벨 (합쳐진 {{direction}} 매크로 등에서 AI가 성격이 다른 지시임을 구분하도록)
 const SCOPE_LABELS = {
     global: "[Format Rules]",
     char: "[Character Notes]",
@@ -49,8 +75,9 @@ const defaultSettings = {
     },
     // 확장 메뉴 설정
     extensionEnabled: true,
-    directionPrompt: DEFAULT_DIRECTION_PROMPT,
-    // 범위(전역/캐릭터/채팅)별로 서로 다른 삽입 위치(Depth)를 쓸 수 있다.
+    // 범위(전역/캐릭터/채팅)별로 완전히 다른 프롬프트 템플릿을 따로 쓴다.
+    directionPrompt: { ...DEFAULT_DIRECTION_PROMPTS },
+    // 범위별로 서로 다른 삽입 위치(Depth)를 쓸 수 있다.
     // 0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입
     promptDepth: { global: 1, char: 1, chat: 1 },
     // 팝업을 열 때 마지막으로 봤던 범위 탭을 기억해서 그대로 복원한다.
@@ -58,7 +85,9 @@ const defaultSettings = {
     _migratedV2: false,
     _migratedV3: false,
     _migratedV4: false,
+    _migratedV5: false,
 };
+
 
 let currentScope = "chat";
 // 현재 범위+플레이스홀더를 팝업에 불러온 시점의 content (이전 내용 추적용)
@@ -69,6 +98,8 @@ let isNativePopupOpen = false;
 // 타이핑 중 매 키 입력마다 매크로를 재등록하면(registerMacro) 버벅일 수 있어서,
 // 입력이 잠시 멈췄을 때 한 번만 실제로 반영되도록 디바운스한다.
 let compactUIApplyDebounceTimer = null;
+// 확장 설정 패널에서 지금 편집 중인 프롬프트 탭 (전역/캐릭터/채팅)
+let promptEditorScope = "global";
 
 // 플레이스홀더 정의
 const placeholders = [
@@ -202,6 +233,18 @@ function getScopeDepth(scope) {
     return Number.isInteger(depth?.[scope]) ? depth[scope] : 1;
 }
 
+// directionPrompt는 이제 범위별(전역/캐릭터/채팅) 템플릿 객체다. 값이 없거나 잘못돼 있으면
+// 그 범위의 기본 템플릿으로 채운다.
+function normalizeDirectionPromptObject(raw) {
+    const src = raw && typeof raw === "object" ? raw : {};
+
+    return {
+        global: typeof src.global === "string" ? src.global : DEFAULT_DIRECTION_PROMPTS.global,
+        char: typeof src.char === "string" ? src.char : DEFAULT_DIRECTION_PROMPTS.char,
+        chat: typeof src.chat === "string" ? src.chat : DEFAULT_DIRECTION_PROMPTS.chat,
+    };
+}
+
 function isGroupContext(context) {
     return Boolean(context?.groupId ?? context?.selected_group ?? context?.group?.id ?? context?.is_group);
 }
@@ -303,12 +346,13 @@ function normalizeSettings() {
     settings.chats = settings.chats && typeof settings.chats === "object" ? settings.chats : {};
     settings.presets = sanitizePresets(settings.presets);
     settings.extensionEnabled = typeof settings.extensionEnabled === "boolean" ? settings.extensionEnabled : defaultSettings.extensionEnabled;
-    settings.directionPrompt = typeof settings.directionPrompt === "string" ? settings.directionPrompt : defaultSettings.directionPrompt;
+    settings.directionPrompt = normalizeDirectionPromptObject(settings.directionPrompt);
     settings.promptDepth = normalizePromptDepth(settings.promptDepth);
     settings.lastScope = ["global", "char", "chat"].includes(settings.lastScope) ? settings.lastScope : "chat";
     settings._migratedV2 = Boolean(settings._migratedV2);
     settings._migratedV3 = Boolean(settings._migratedV3);
     settings._migratedV4 = Boolean(settings._migratedV4);
+    settings._migratedV5 = Boolean(settings._migratedV5);
 
     Object.keys(settings.chars).forEach((key) => {
         settings.chars[key] = sanitizeScopeState(settings.chars[key]);
@@ -416,6 +460,32 @@ function migrateV4LegacyCharScopeIfNeeded() {
     return true;
 }
 
+// v4까지는 프롬프트 템플릿이 문자열 하나였고, 모든 범위가 그 템플릿을 그대로 반복해서 썼다.
+// v5부터는 범위별로 완전히 다른 템플릿을 쓴다. 예전에 직접 고쳐 썼던 프롬프트가 있으면
+// (기본값과 다르면) "채팅" 범위 것으로 그대로 옮겨준다 — 원래 이 문구 자체가
+// "다음 채팅 지시"용으로 쓰여진 것이었기 때문이다. 전역/캐릭터는 새 기본 템플릿을 받는다.
+function migrateV5DirectionPromptIfNeeded() {
+    const settings = getSettings();
+
+    if (settings._migratedV5) {
+        return false;
+    }
+
+    if (typeof settings.directionPrompt === "string") {
+        const legacy = settings.directionPrompt;
+        settings.directionPrompt = { ...DEFAULT_DIRECTION_PROMPTS };
+
+        if (legacy && legacy.trim() !== "" && legacy !== DEFAULT_DIRECTION_PROMPT) {
+            settings.directionPrompt.chat = legacy;
+        }
+
+        console.log(`${LOG_PREFIX} Direction 프롬프트가 범위별 템플릿으로 나뉘었습니다. 기존 프롬프트는 "채팅" 범위로 옮겼습니다.`);
+    }
+
+    settings._migratedV5 = true;
+    return true;
+}
+
 // 설정 로드
 async function loadSettings() {
     const settings = getSettings();
@@ -427,10 +497,11 @@ async function loadSettings() {
     const migrated = migrateV1SettingsIfNeeded();
     const migratedV3 = migrateV3PresetsIfNeeded();
     const migratedV4 = migrateV4LegacyCharScopeIfNeeded();
+    const migratedV5 = migrateV5DirectionPromptIfNeeded();
     const pruned = pruneRemovedPlaceholders();
     normalizeSettings();
 
-    if (migrated || migratedV3 || migratedV4 || pruned) {
+    if (migrated || migratedV3 || migratedV4 || migratedV5 || pruned) {
         saveSettingsDebounced();
     }
 }
@@ -1194,12 +1265,17 @@ async function initializeExtensionMenu() {
 // 확장 메뉴 UI 업데이트
 function updateExtensionMenuUI() {
     const settings = getSettings();
+    const prompts = normalizeDirectionPromptObject(settings.directionPrompt);
 
     // 활성화 체크박스 상태 설정
     $("#direction_manager_enabled").prop("checked", settings.extensionEnabled);
 
-    // 프롬프트 텍스트 설정
-    $("#direction_prompt_text").val(settings.directionPrompt || DEFAULT_DIRECTION_PROMPT);
+    // 프롬프트 탭(전역/캐릭터/채팅) 활성 표시 + 지금 선택된 탭의 프롬프트 내용 표시
+    $(".dm-prompt-tab-btn")
+        .removeClass("dm-prompt-tab-btn--active")
+        .filter(`[data-scope="${promptEditorScope}"]`)
+        .addClass("dm-prompt-tab-btn--active");
+    $("#direction_prompt_text").val(prompts[promptEditorScope] ?? "");
 
     // 범위별 Depth 설정
     $("#direction_prompt_depth_global").val(settings.promptDepth?.global ?? 1);
@@ -1280,9 +1356,17 @@ function setupExtensionMenuEventHandlers() {
         saveSettingsDebounced();
     });
 
-    // 프롬프트 텍스트 변경 이벤트 (실시간 저장)
+    // 프롬프트 탭(전역/캐릭터/채팅) 전환 이벤트
+    $(".dm-prompt-tab-btn").on("click", function () {
+        promptEditorScope = String($(this).data("scope"));
+        updateExtensionMenuUI();
+    });
+
+    // 프롬프트 텍스트 변경 이벤트 (실시간 저장, 지금 선택된 탭에만 저장)
     $("#direction_prompt_text").on("input", function () {
-        getSettings().directionPrompt = $(this).val();
+        const settings = getSettings();
+        settings.directionPrompt = normalizeDirectionPromptObject(settings.directionPrompt);
+        settings.directionPrompt[promptEditorScope] = String($(this).val() ?? "");
         saveSettingsDebounced();
     });
 
@@ -1301,15 +1385,15 @@ function setupExtensionMenuEventHandlers() {
     bindScopeDepthInput("char", "#direction_prompt_depth_char");
     bindScopeDepthInput("chat", "#direction_prompt_depth_chat");
 
-    // 기본값 초기화 버튼
+    // 기본값 초기화 버튼 (세 범위 프롬프트 + Depth 전부 기본값으로)
     $("#direction_reset_prompt").on("click", function () {
-        $("#direction_prompt_text").val(DEFAULT_DIRECTION_PROMPT);
+        const settings = getSettings();
+        settings.directionPrompt = { ...DEFAULT_DIRECTION_PROMPTS };
+        settings.promptDepth = { global: 1, char: 1, chat: 1 };
         $("#direction_prompt_depth_global").val(1);
         $("#direction_prompt_depth_char").val(1);
         $("#direction_prompt_depth_chat").val(1);
-        const settings = getSettings();
-        settings.directionPrompt = DEFAULT_DIRECTION_PROMPT;
-        settings.promptDepth = { global: 1, char: 1, chat: 1 };
+        updateExtensionMenuUI();
         saveSettingsDebounced();
     });
 
@@ -1333,17 +1417,14 @@ function injectDirectionPrompt(eventData) {
         return;
     }
 
-    // 프롬프트가 비어있으면 주입하지 않음
-    if (!settings.directionPrompt || settings.directionPrompt.trim() === "") {
-        return;
-    }
-
     // 참고 파일 방식: eventData.chat 또는 eventData.messages 확인
     const messages = eventData.chat || eventData.messages;
 
     if (!messages || !Array.isArray(messages)) {
         return;
     }
+
+    const templates = normalizeDirectionPromptObject(settings.directionPrompt);
 
     SCOPE_ORDER.forEach((scope) => {
         const value = getScopedPlaceholder(scope, "direction");
@@ -1352,11 +1433,16 @@ function injectDirectionPrompt(eventData) {
             return;
         }
 
-        const scopedContent = `${SCOPE_LABELS[scope]}\n${value.content.trim()}`;
+        const template = templates[scope];
 
-        // 플레이스홀더 치환
-        const processedPrompt = settings.directionPrompt
-            .replace(/\{\{direction\}\}/g, scopedContent)
+        // 이 범위의 프롬프트 템플릿이 비어있으면 이 범위는 건너뜀 (다른 범위는 계속 진행)
+        if (!template || template.trim() === "") {
+            return;
+        }
+
+        // 플레이스홀더 치환 (각 범위는 자기 템플릿에만 자기 내용을 채운다 — 다른 범위와 합쳐지지 않음)
+        const processedPrompt = template
+            .replace(/\{\{direction\}\}/g, value.content.trim())
             // 예전에 커스텀 프롬프트에 남긴 흔적이 있어도 확장에서는 더 이상 처리하지 않음
             .replace(/\{\{char\}\}/g, "")
             .replace(/\{\{user\}\}/g, "");
