@@ -41,10 +41,10 @@
     position: absolute;
     bottom: 100%;
     right: 0;
-    width: 450px;
+    width: 300px;
     max-width: 90vw;
-    height: 460px;
-    max-height: 75vh;
+    height: 307px;
+    max-height: 50vh;
     display: flex;
     flex-direction: column;
     transition: 200ms;
@@ -140,7 +140,7 @@
 .dm-compact--scope-row {
     display: flex;
     gap: 6px;
-    padding: 6px 8px;
+    padding: 4px 8px;
     border-bottom: 1px solid var(--SmartThemeBorderColor);
     align-items: center;
     flex-shrink: 0;
@@ -151,10 +151,12 @@
     border: 1px solid var(--SmartThemeBorderColor);
     color: var(--SmartThemeBodyColor);
     border-radius: 4px;
-    height: 28px;
-    padding: 0 8px;
+    height: 30px;
+    padding: 0 10px;
     cursor: pointer;
     transition: all 0.2s ease;
+    font-size: 15px;
+    font-weight: 600;
 }
 
 .dm-compact--scope-btn--active {
@@ -182,7 +184,7 @@
 .dm-compact--preset-row {
     display: flex;
     gap: 6px;
-    padding: 6px 8px;
+    padding: 3px 8px;
     border-bottom: 1px solid var(--SmartThemeBorderColor);
     align-items: center;
     flex-shrink: 0;
@@ -204,7 +206,7 @@
 /* 프리셋 줄이 있든 없든(채팅 범위) 팝업 전체 높이가 고정돼 있으므로,
    이 영역이 flex:1로 남는 공간을 항상 정확히 채운다 */
 .dm-compact--content {
-    padding: 8px;
+    padding: 4px 6px;
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
@@ -248,7 +250,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 6px 8px;
+    padding: 4px 8px;
     border-top: 1px solid var(--SmartThemeBorderColor);
     flex-shrink: 0;
 }
@@ -280,7 +282,7 @@
 /* 태블릿 반응형 디자인 */
 @media (max-width: 950px) {
     .dm-compact--popup {
-        width: 380px;
+        width: 253px;
     }
 
     .dm-compact--scope-row,
@@ -292,14 +294,14 @@
 /* 스마트폰 반응형 디자인 */
 @media (max-width: 480px) {
     .dm-compact--popup {
-        width: 320px;
-        height: 400px;
-        max-height: 70vh;
+        width: 213px;
+        height: 267px;
+        max-height: 47vh;
     }
 
     .dm-compact--header {
-        padding: 6px 8px;
-        gap: 6px;
+        padding: 4px 6px;
+        gap: 4px;
     }
 
     .dm-compact--nav,
@@ -320,18 +322,22 @@
     }
 
     .dm-compact--scope-btn {
-        height: 24px;
-        padding: 0 6px;
-        font-size: 11px;
+        height: 26px;
+        padding: 0 7px;
+        font-size: 13px;
+        font-weight: 600;
     }
 
-    .dm-compact--scope-row,
+    .dm-compact--scope-row {
+        padding: 3px 6px;
+    }
+
     .dm-compact--preset-row {
-        padding: 6px;
+        padding: 2px 6px;
     }
 
     .dm-compact--content {
-        padding: 6px;
+        padding: 3px 5px;
     }
 
     .dm-compact--textarea {
