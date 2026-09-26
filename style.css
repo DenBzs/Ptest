@@ -43,7 +43,7 @@
     right: 0;
     width: 450px;
     max-width: 90vw;
-    height: 260px;
+    height: calc(260px + 2.5 * var(--mainFontSize));
     max-height: 45vh;
     display: flex;
     flex-direction: column;
@@ -216,6 +216,7 @@
     width: 100%;
     flex: 1 1 auto;
     min-height: 0;
+    max-height: 100%;
     padding: 8px;
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 5px;
@@ -295,7 +296,7 @@
 @media (max-width: 480px) {
     .dm-compact--popup {
         width: 320px;
-        height: 225px;
+        height: calc(225px + 2.5 * var(--mainFontSize) * 0.85);
         max-height: 40vh;
     }
 
