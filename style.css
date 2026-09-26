@@ -23,7 +23,7 @@
     background-color: var(--white30a);
 }
 
-.dm-compact--button.dm-compact--hasPopup {
+.dm-compact--button[data-dm-popup-open="true"] {
     opacity: 1;
 }
 
