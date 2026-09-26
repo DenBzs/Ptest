@@ -10,7 +10,7 @@
     margin-left: -5px;
     font-size: 0.5em;
     background-color: transparent;
-    opacity: 0.5;
+    opacity: 1;
     transition: 200ms;
     cursor: pointer;
     border: none;
@@ -41,10 +41,10 @@
     position: absolute;
     bottom: 100%;
     right: 0;
-    width: 300px;
+    width: 450px;
     max-width: 90vw;
-    height: 307px;
-    max-height: 50vh;
+    height: 260px;
+    max-height: 45vh;
     display: flex;
     flex-direction: column;
     transition: 200ms;
@@ -140,7 +140,7 @@
 .dm-compact--scope-row {
     display: flex;
     gap: 6px;
-    padding: 4px 8px;
+    padding: 8px 8px 4px;
     border-bottom: 1px solid var(--SmartThemeBorderColor);
     align-items: center;
     flex-shrink: 0;
@@ -282,7 +282,7 @@
 /* 태블릿 반응형 디자인 */
 @media (max-width: 950px) {
     .dm-compact--popup {
-        width: 253px;
+        width: 380px;
     }
 
     .dm-compact--scope-row,
@@ -294,9 +294,9 @@
 /* 스마트폰 반응형 디자인 */
 @media (max-width: 480px) {
     .dm-compact--popup {
-        width: 213px;
-        height: 267px;
-        max-height: 47vh;
+        width: 320px;
+        height: 225px;
+        max-height: 40vh;
     }
 
     .dm-compact--header {
@@ -329,7 +329,7 @@
     }
 
     .dm-compact--scope-row {
-        padding: 3px 6px;
+        padding: 6px 6px 3px;
     }
 
     .dm-compact--preset-row {
