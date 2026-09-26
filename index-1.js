@@ -90,6 +90,13 @@ const defaultSettings = {
 
 
 let currentScope = "chat";
+// 입력칸(textarea)을 드래그로 리사이즈했을 때, 전역/캐릭터는 높이를 공유하고
+// 채팅만 따로 기억하기 위한 그룹 저장소. 드래그 리사이즈는 별도 이벤트가 없으므로
+// 스코프를 전환하는 시점에 현재 높이를 읽어서 그룹별로 저장/복원한다.
+function textareaHeightGroup(scope) {
+    return scope === "chat" ? "chat" : "shared";
+}
+let compactUITextareaHeights = { shared: "", chat: "" };
 // 현재 범위+플레이스홀더를 팝업에 불러온 시점의 content (이전 내용 추적용)
 let editSessionSnapshot = null;
 // ST 네이티브 Popup(확인/입력창)이 떠 있는 동안 true. 이 동안에는
@@ -960,10 +967,21 @@ function setupCompactUIEventListeners() {
             return;
         }
 
+        // 벗어나는 스코프가 속한 그룹의 지금 입력칸 높이를 기억해둔다.
+        const textarea = compactUIPopup.find(".dm-compact--textarea");
+        const outgoingGroup = textareaHeightGroup(currentScope);
+        compactUITextareaHeights[outgoingGroup] = textarea.length ? textarea[0].style.height : "";
+
         currentScope = nextScope;
         getSettings().lastScope = nextScope;
         saveSettingsDebounced();
         syncPopupByCurrentState();
+
+        // 전환해 들어온 스코프가 속한 그룹의 높이를 복원 (없으면 기본 크기로 돌아감)
+        const incomingGroup = textareaHeightGroup(nextScope);
+        if (textarea.length) {
+            textarea[0].style.height = compactUITextareaHeights[incomingGroup] || "";
+        }
     });
 
     // 이전 내용 <-> 현재 내용 토글 (두 버튼 모두 동일하게 내용을 맞바꿈)
