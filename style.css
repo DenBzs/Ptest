@@ -71,8 +71,8 @@
 
 .dm-compact--title {
     font-family: 'Courier New', monospace;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 16px;
+    font-weight: 800;
     color: var(--SmartThemeQuoteColor);
     white-space: nowrap;
     overflow: hidden;
@@ -137,14 +137,6 @@
     align-items: center;
 }
 
-.dm-compact--scope-row > span,
-.dm-compact--preset-row > span {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--SmartThemeBodyColor);
-    flex-shrink: 0;
-}
-
 .dm-compact--scope-btn {
     background: transparent;
     border: 1px solid var(--SmartThemeBorderColor);
@@ -157,7 +149,18 @@
 }
 
 .dm-compact--scope-btn--active {
-    background-color: var(--SmartThemeQuoteColor);
+    /* color-mix를 지원하지 않는 환경(webview 등)에서도 항상 옅게 나오도록,
+       테마 색상에 기대지 않는 반투명 회색 배경 + 테마색 테두리로 표시 */
+    background-color: rgba(127, 127, 127, 0.22);
+    border-color: var(--SmartThemeQuoteColor);
+    color: var(--SmartThemeQuoteColor);
+}
+
+/* 확장 설정 패널의 범위별 Direction 프롬프트 탭 (전역/캐릭터/채팅) */
+.dm-prompt-tab-btn--active {
+    background-color: rgba(127, 127, 127, 0.22);
+    border-color: var(--SmartThemeQuoteColor);
+    color: var(--SmartThemeQuoteColor);
 }
 
 .dm-compact--scope-btn:disabled,
@@ -165,10 +168,6 @@
 .dm-compact--preset-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
-}
-
-.dm-compact--history-prev {
-    margin-left: auto;
 }
 
 .dm-compact--preset-row {
@@ -228,14 +227,42 @@
     cursor: not-allowed;
 }
 
-.dm-compact--indicator {
+/* 하단 바: 상태 표시(왼쪽) + 지우개/이전·다음 내용 버튼(오른쪽, 맨 아래) */
+.dm-compact--footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 6px 8px;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+.dm-compact--footer-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.dm-compact--indicator {
     color: var(--SmartThemeBodyColor);
     opacity: 0.85;
     font-size: 12px;
     font-weight: 600;
-    border-top: 1px solid var(--SmartThemeBorderColor);
     min-height: 1em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 채팅 범위에서는 프리셋 줄을 숨기고, 그 공간만큼 입력칸을 늘린다.
+   팝업 자체 크기(width 등)는 전역/캐릭터/채팅 모두 동일하게 유지된다. */
+.dm-compact--popup.dm-compact--hide-preset .dm-compact--preset-row {
+    display: none;
+}
+
+.dm-compact--popup.dm-compact--hide-preset .dm-compact--textarea {
+    min-height: 164px;
+    max-height: 244px;
 }
 
 /* 태블릿 반응형 디자인 */
@@ -289,11 +316,6 @@
         padding: 6px;
     }
 
-    .dm-compact--scope-row > span,
-    .dm-compact--preset-row > span {
-        font-size: 11px;
-    }
-
     .dm-compact--content {
         padding: 6px;
     }
@@ -301,6 +323,10 @@
     .dm-compact--textarea {
         min-height: 80px;
         font-size: calc(var(--mainFontSize) * 0.85);
+    }
+
+    .dm-compact--popup.dm-compact--hide-preset .dm-compact--textarea {
+        min-height: 124px;
     }
 }
 
