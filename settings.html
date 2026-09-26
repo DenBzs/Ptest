@@ -12,7 +12,12 @@
         </div>
         <br>
         <div class="">
-            <div><label for="direction_prompt_text" class="flex1">Direction 프롬프트</label></div>
+            <div><label class="flex1">Direction 프롬프트 (범위별로 따로 저장됩니다)</label></div>
+            <div class="flex-container flexnowrap dm-prompt-tabs" style="gap:6px; margin: 4px 0;">
+                <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="global">전역</button>
+                <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="char">캐릭터</button>
+                <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="chat">채팅</button>
+            </div>
             <textarea id="direction_prompt_text" class="text_pole textarea_compact" rows="8" placeholder="Direction 프롬프트를 입력하세요..."></textarea>
         </div>
         <br>
