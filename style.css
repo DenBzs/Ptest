@@ -70,7 +70,19 @@
     flex-shrink: 0;
 }
 
-/* 헤더 좌우를 벌려서 체크박스는 왼쪽, 지우개/이전·다음 버튼은 오른쪽에 붙인다 */
+/* 헤더 좌우를 벌려서 체크박스+타이틀은 왼쪽, 지우개/이전·다음 버튼은 오른쪽에 붙인다 */
+.dm-compact--title {
+    font-family: 'Courier New', monospace;
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--SmartThemeQuoteColor);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
 .dm-compact--header-spacer {
     flex: 1 1 auto;
 }
@@ -297,6 +309,10 @@
         width: 24px;
         height: 24px;
         font-size: 10px;
+    }
+
+    .dm-compact--title {
+        font-size: 12px;
     }
 
     .dm-compact--radio {
