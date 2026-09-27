@@ -137,9 +137,15 @@ function applyTextareaHeightCap() {
         (header.outerHeight(true) || 0) +
         (scopeRow.outerHeight(true) || 0) +
         presetRowHeight +
-        24; // 팝업 테두리 + content 패딩 여유분
+        16; // 팝업 테두리 + content 패딩 여유분
 
-    const viewportBudget = window.innerHeight * (window.innerWidth <= 480 ? 0.42 : 0.5);
+    // window.innerHeight는 키보드가 열려 있으면 그만큼 줄어든 값이라, 팝업을 보통
+    // 그렇게(키보드가 이미 열린 채로) 열게 되는 이 UI 특성상 캡이 계속 작게 잡히는
+    // 문제가 있었다. 그래서 키보드 상태와 무관한 화면 자체 크기(screen.availHeight)를
+    // 기준으로 잡는다 — 키보드가 열려 있는 동안 캡 근처까지 늘리면 팝업 위쪽이
+    // 화면 밖으로 나갈 수 있지만, 키보드를 닫으면 바로 정상적으로 다 보인다.
+    const viewportBasis = (window.screen && window.screen.availHeight) || window.innerHeight;
+    const viewportBudget = viewportBasis * (window.innerWidth <= 480 ? 0.55 : 0.6);
     const maxTextareaHeight = Math.max(110, Math.round(viewportBudget - chromeHeight));
 
     textarea.css("max-height", `${maxTextareaHeight}px`);
@@ -944,6 +950,7 @@ function showCompactUIPopup() {
         <div class="dm-compact--popup">
             <div class="dm-compact--header">
                 <input type="checkbox" class="dm-compact--radio" title="이 범위 켜기/끄기">
+                <div class="dm-compact--title">🪄전개지시M</div>
                 <div class="dm-compact--header-spacer"></div>
                 <button class="dm-compact--history-btn dm-compact--history-prev" type="button" title="이전 내용 보기">
                     <i class="fa-solid fa-arrow-left"></i>
@@ -959,7 +966,7 @@ function showCompactUIPopup() {
             <div class="dm-compact--scope-row">
                 <button class="dm-compact--scope-btn" data-scope="global" type="button"><span class="dm-compact--scope-emoji">🌐</span>전역</button>
                 <button class="dm-compact--scope-btn" data-scope="char" type="button"><span class="dm-compact--scope-emoji">🎭</span>캐릭터</button>
-                <button class="dm-compact--scope-btn" data-scope="chat" type="button"><span class="dm-compact--scope-emoji">🪄</span>채팅</button>
+                <button class="dm-compact--scope-btn" data-scope="chat" type="button"><span class="dm-compact--scope-emoji">🗨️</span>채팅</button>
             </div>
 
             <div class="dm-compact--preset-row">
@@ -1005,20 +1012,37 @@ function showCompactUIPopup() {
 function setupCompactUIEventListeners() {
     if (!compactUIPopup) return;
 
-    // 스코프 탭 / 이전·다음 내용 / 지우개 버튼을 누를 때 textarea가 blur되지
-    // 않게 막는다. 모바일 브라우저는 포커스가 textarea를 벗어나면 자동으로
-    // 키보드를 닫는데, mousedown(터치는 touchstart) 시점에 기본 동작만 막으면
-    // 포커스가 유지되어 click 이벤트(버튼 동작 자체)는 그대로 정상 실행된다.
-    compactUIPopup.on("mousedown touchstart", [
-        ".dm-compact--scope-btn",
-        ".dm-compact--history-prev",
-        ".dm-compact--history-next",
-        ".dm-compact--clear",
-    ].join(", "), (e) => {
-        e.preventDefault();
-    });
+    // 스코프 탭 / 이전·다음 내용 / 지우개 버튼을 누를 때 textarea가 blur되어
+    // 키보드가 닫히지 않게 한다. 주의: touchstart에서 preventDefault()를 호출하면
+    // 브라우저가 그 터치에 대해 뒤따르는 click(마우스 호환 이벤트) 자체를 아예
+    // 만들어주지 않는다 — 그래서 버튼이 안 눌리는 것처럼 보였다. 그래서 여기서는
+    // touchstart 시점에 preventDefault로 blur만 막고, 실제 동작(handler)도 그
+    // 자리에서 바로 실행한 뒤 뒤이어 오는 click은 무시한다(중복 실행 방지).
+    // 마우스 환경에서는 touchstart가 없으니 click이 정상적으로 그대로 쓰인다.
+    function bindTapAction(selector, handler) {
+        let suppressNextClick = false;
 
-    compactUIPopup.find(".dm-compact--scope-btn").on("click", function () {
+        compactUIPopup.on("touchstart", selector, function (e) {
+            if ($(this).prop("disabled")) return;
+            e.preventDefault();
+            suppressNextClick = true;
+            handler.call(this, e);
+        });
+
+        compactUIPopup.on("mousedown", selector, (e) => {
+            e.preventDefault();
+        });
+
+        compactUIPopup.on("click", selector, function (e) {
+            if (suppressNextClick) {
+                suppressNextClick = false;
+                return;
+            }
+            handler.call(this, e);
+        });
+    }
+
+    bindTapAction(".dm-compact--scope-btn", function () {
         const nextScope = $(this).data("scope");
         const availability = getScopeAvailability(nextScope);
 
@@ -1041,7 +1065,7 @@ function setupCompactUIEventListeners() {
     });
 
     // 이전 내용 <-> 현재 내용 토글 (두 버튼 모두 동일하게 내용을 맞바꿈)
-    compactUIPopup.find(".dm-compact--history-prev, .dm-compact--history-next").on("click", () => {
+    bindTapAction(".dm-compact--history-prev, .dm-compact--history-next", function () {
         const placeholder = getPopupCurrentPlaceholder();
         const scopedValue = getCurrentScopeState(placeholder.key);
 
@@ -1091,7 +1115,7 @@ function setupCompactUIEventListeners() {
     });
 
     // 지우개 버튼: 확인창 없이 바로 삭제 (지우기 전 내용은 이전 내용으로 남아 화살표로 복원 가능)
-    compactUIPopup.find(".dm-compact--clear").on("click", function () {
+    bindTapAction(".dm-compact--clear", function () {
         const currentPlaceholder = getPopupCurrentPlaceholder();
         const scopedValue = getCurrentScopeState(currentPlaceholder.key);
 
