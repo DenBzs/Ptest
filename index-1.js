@@ -96,6 +96,38 @@ function textareaHeightGroup(scope) {
     return scope === "chat" ? "chat" : "shared";
 }
 let compactUITextareaHeights = { shared: "", chat: "" };
+// 채팅 탭에서 유저가 직접(리사이즈 손잡이로) 크기를 조절한 적이 있는지.
+// 한 번이라도 조절하면 그 뒤로는 전역/캐릭터와 별개로 독립적으로 기억한다.
+let chatHeightIsCustom = false;
+// 리사이즈 손잡이를 잡았을 수도 있는 후보 제스처의 "잡기 전" 높이. mouseup/touchend
+// 시점에 실제로 높이가 바뀌었는지 비교해서 "진짜 리사이즈였는지" 판단하는 데 쓴다.
+let resizeCandidateHeight = null;
+// 프리셋 줄은 채팅 탭에서 display:none으로 완전히 없어지므로, 그 높이를 팝업을
+// 열 때 한 번 측정해서 캐싱해둔다(채팅 탭이 그 공간만큼 textarea를 키우는 데 사용).
+let cachedPresetRowHeight = 0;
+
+// 지금 숨겨져 있어도(display:none) 잠깐 보이게 만들어서 실제 높이를 측정한다.
+function measurePresetRowHeight() {
+    if (!compactUIPopup) return 0;
+
+    const presetRow = compactUIPopup.find(".dm-compact--preset-row");
+
+    if (!presetRow.length) return 0;
+
+    const wasHidden = compactUIPopup.hasClass("dm-compact--hide-preset");
+
+    if (wasHidden) {
+        compactUIPopup.removeClass("dm-compact--hide-preset");
+    }
+
+    const height = presetRow.outerHeight(true) || 0;
+
+    if (wasHidden) {
+        compactUIPopup.addClass("dm-compact--hide-preset");
+    }
+
+    return height;
+}
 
 // 팝업을 처음 열었을 때(유저가 아직 드래그로 리사이즈하기 전) textarea 기본 높이
 function defaultTextareaHeightPx() {
@@ -104,12 +136,24 @@ function defaultTextareaHeightPx() {
 
 // 지금 스코프 그룹에 저장된 높이가 있으면 복원하고, 없으면 기본 높이로 되돌린다.
 // (팝업을 새로 열 때 + 스코프 탭을 전환할 때 공통으로 사용)
+//
+// 채팅 탭만 예외: 유저가 아직 채팅에서 직접 리사이즈한 적이 없으면, 전역/캐릭터
+// (shared) 높이 + 프리셋 줄 높이로 자동으로 맞춰서 팝업 총 높이가 같아 보이게
+// 한다(프리셋 줄이 없어진 자리를 입력칸이 채우는 셈). 한 번이라도 직접 리사이즈하면
+// 그 뒤로는 전역/캐릭터와 완전히 별개로(chatHeightIsCustom) 독립적으로 기억한다.
 function restoreTextareaHeightForCurrentScope() {
     if (!compactUIPopup) return;
 
     const textarea = compactUIPopup.find(".dm-compact--textarea");
 
     if (!textarea.length) return;
+
+    if (currentScope === "chat" && !chatHeightIsCustom) {
+        const sharedPx = parseFloat(compactUITextareaHeights.shared || defaultTextareaHeightPx())
+            || parseFloat(defaultTextareaHeightPx());
+        textarea[0].style.height = `${Math.round(sharedPx + cachedPresetRowHeight)}px`;
+        return;
+    }
 
     const group = textareaHeightGroup(currentScope);
     textarea[0].style.height = compactUITextareaHeights[group] || defaultTextareaHeightPx();
@@ -127,16 +171,13 @@ function applyTextareaHeightCap() {
 
     const header = compactUIPopup.find(".dm-compact--header");
     const scopeRow = compactUIPopup.find(".dm-compact--scope-row");
-    const presetRow = compactUIPopup.find(".dm-compact--preset-row");
 
-    // 프리셋 줄이 지금 숨겨져 있어도(채팅 범위), 전역/캐릭터로 전환했을 때도
-    // 안전하게 들어가도록 항상 프리셋 줄의 높이를 감안해서 계산한다.
-    const presetRowHeight = presetRow.outerHeight(true) || 40;
-
+    // 프리셋 줄은 채팅 탭에서 display:none이라 그 순간엔 측정할 수 없으므로,
+    // 팝업을 열 때 미리 캐싱해둔 값(cachedPresetRowHeight)을 항상 더해준다.
     const chromeHeight =
         (header.outerHeight(true) || 0) +
         (scopeRow.outerHeight(true) || 0) +
-        presetRowHeight +
+        cachedPresetRowHeight +
         16; // 팝업 테두리 + content 패딩 여유분
 
     // window.innerHeight는 키보드가 열려 있으면 그만큼 줄어든 값이라, 팝업을 보통
@@ -931,6 +972,7 @@ function closeCompactUIPopup() {
     }
 
     $(document).off("click.compactUI");
+    $(document).off("mouseup.dmResize touchend.dmResize");
 }
 
 // 컴팩트 UI 팝업 표시
@@ -1004,6 +1046,7 @@ function showCompactUIPopup() {
 
     // textarea 기본/복원 높이 적용 + 화면을 벗어나지 않도록 상한선을 딱 한 번 계산
     // (이후 키보드가 열리고 닫혀도 다시 계산하지 않음 — 그게 버벅임의 원인이었음)
+    cachedPresetRowHeight = measurePresetRowHeight();
     restoreTextareaHeightForCurrentScope();
     applyTextareaHeightCap();
 }
@@ -1026,6 +1069,11 @@ function setupCompactUIEventListeners() {
             if ($(this).prop("disabled")) return;
             e.preventDefault();
             suppressNextClick = true;
+            // 대부분의 모바일 브라우저는 touchstart에서 preventDefault를 부르면
+            // 뒤따르는 click을 아예 안 만들어주지만(그래서 여기서 직접 실행),
+            // 일부 환경(마우스도 같이 붙어있는 하이브리드 기기 등)에서 click이
+            // 그래도 올 수 있어 짧은 시간 후 자동으로 플래그를 풀어준다.
+            setTimeout(() => { suppressNextClick = false; }, 400);
             handler.call(this, e);
         });
 
@@ -1112,6 +1160,50 @@ function setupCompactUIEventListeners() {
         applyPlaceholderToSystem(currentPlaceholder);
         saveSettingsDebounced();
         updateAppliedIndicator();
+    });
+
+    // 체크박스(스코프 켜기/끄기)도 터치로 누르면 blur→키보드 닫힘이 발생했다.
+    // 체크박스는 클릭 시 브라우저가 checked를 뒤집고 "change"를 쏘는 방식이라,
+    // touchstart에서 preventDefault로 그 흐름 자체를 막은 뒤 우리가 직접
+    // checked를 뒤집고 change를 수동으로 발생시켜 위 로직을 그대로 재사용한다.
+    compactUIPopup.on("touchstart", ".dm-compact--radio", function (e) {
+        e.preventDefault();
+        const checkbox = $(this);
+        checkbox.prop("checked", !checkbox.prop("checked")).trigger("change");
+    });
+
+    compactUIPopup.on("mousedown", ".dm-compact--radio", (e) => {
+        e.preventDefault();
+    });
+
+    // 채팅 탭에서 유저가 textarea 리사이즈 손잡이(우하단 모서리)를 실제로 드래그해서
+    // 크기를 바꿨는지 감지한다. 이미 커스텀 크기로 넘어갔거나 채팅 탭이 아니면 무시.
+    // "잡은 지점이 모서리 근처였는지"만으로는 오탐(그냥 텍스트 커서 놓으려고 모서리
+    // 근처를 탭한 경우)이 생길 수 있어서, mouseup/touchend 때 실제로 높이가
+    // 바뀌었는지까지 확인한 뒤에만 커스텀으로 인정한다.
+    compactUIPopup.on("mousedown touchstart", ".dm-compact--textarea", function (e) {
+        if (currentScope !== "chat" || chatHeightIsCustom) {
+            resizeCandidateHeight = null;
+            return;
+        }
+
+        const point = (e.originalEvent && e.originalEvent.touches && e.originalEvent.touches[0]) || e.originalEvent || e;
+        const rect = this.getBoundingClientRect();
+        const nearResizeHandle = rect.right - point.clientX <= 20 && rect.bottom - point.clientY <= 20;
+
+        resizeCandidateHeight = nearResizeHandle ? this.style.height : null;
+    });
+
+    $(document).on("mouseup.dmResize touchend.dmResize", () => {
+        if (resizeCandidateHeight === null || !compactUIPopup) return;
+
+        const textarea = compactUIPopup.find(".dm-compact--textarea")[0];
+
+        if (textarea && textarea.style.height !== resizeCandidateHeight) {
+            chatHeightIsCustom = true;
+        }
+
+        resizeCandidateHeight = null;
     });
 
     // 지우개 버튼: 확인창 없이 바로 삭제 (지우기 전 내용은 이전 내용으로 남아 화살표로 복원 가능)
