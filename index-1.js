@@ -58,7 +58,6 @@ const SCOPE_LABELS = {
 };
 
 const SCOPE_ORDER = ["global", "char", "chat"];
-const SCOPE_DISPLAY_NAMES = { global: "전역", char: "캐릭터", chat: "채팅" };
 
 function defaultScopeState() {
     return {
@@ -97,6 +96,54 @@ function textareaHeightGroup(scope) {
     return scope === "chat" ? "chat" : "shared";
 }
 let compactUITextareaHeights = { shared: "", chat: "" };
+
+// 팝업을 처음 열었을 때(유저가 아직 드래그로 리사이즈하기 전) textarea 기본 높이
+function defaultTextareaHeightPx() {
+    return window.innerWidth <= 480 ? "130px" : "160px";
+}
+
+// 지금 스코프 그룹에 저장된 높이가 있으면 복원하고, 없으면 기본 높이로 되돌린다.
+// (팝업을 새로 열 때 + 스코프 탭을 전환할 때 공통으로 사용)
+function restoreTextareaHeightForCurrentScope() {
+    if (!compactUIPopup) return;
+
+    const textarea = compactUIPopup.find(".dm-compact--textarea");
+
+    if (!textarea.length) return;
+
+    const group = textareaHeightGroup(currentScope);
+    textarea[0].style.height = compactUITextareaHeights[group] || defaultTextareaHeightPx();
+}
+
+// 팝업을 열 때 딱 한 번만 textarea의 max-height를 계산해서 걸어준다.
+// 화면(뷰포트) 기준으로 계산하되, 이후 키보드가 열리고 닫혀도 다시 계산하지
+// 않는다 — 키보드 상태에 따라 크기가 바뀌는 것 자체가 버벅임의 원인이었기 때문.
+function applyTextareaHeightCap() {
+    if (!compactUIPopup) return;
+
+    const textarea = compactUIPopup.find(".dm-compact--textarea");
+
+    if (!textarea.length) return;
+
+    const header = compactUIPopup.find(".dm-compact--header");
+    const scopeRow = compactUIPopup.find(".dm-compact--scope-row");
+    const presetRow = compactUIPopup.find(".dm-compact--preset-row");
+
+    // 프리셋 줄이 지금 숨겨져 있어도(채팅 범위), 전역/캐릭터로 전환했을 때도
+    // 안전하게 들어가도록 항상 프리셋 줄의 높이를 감안해서 계산한다.
+    const presetRowHeight = presetRow.outerHeight(true) || 40;
+
+    const chromeHeight =
+        (header.outerHeight(true) || 0) +
+        (scopeRow.outerHeight(true) || 0) +
+        presetRowHeight +
+        24; // 팝업 테두리 + content 패딩 여유분
+
+    const viewportBudget = window.innerHeight * (window.innerWidth <= 480 ? 0.42 : 0.5);
+    const maxTextareaHeight = Math.max(110, Math.round(viewportBudget - chromeHeight));
+
+    textarea.css("max-height", `${maxTextareaHeight}px`);
+}
 // 현재 범위+플레이스홀더를 팝업에 불러온 시점의 content (이전 내용 추적용)
 let editSessionSnapshot = null;
 // ST 네이티브 Popup(확인/입력창)이 떠 있는 동안 true. 이 동안에는
@@ -769,19 +816,22 @@ function renderPresetSelect() {
     compactUIPopup.find(".dm-compact--preset-delete").prop("disabled", !hasSelection);
 }
 
+// "이 범위가 켜져 있고 실제로 적용 중인 내용이 있는지"를 스코프 버튼
+// (이모지 채도 + 글자색)으로 표시한다. 예전엔 별도 줄(🟢활성: ...)로 텍스트
+// 표시했지만, 그 줄 자체를 없애고 각 스코프 버튼에 상태를 얹는 방식으로 옮겼다.
 function updateAppliedIndicator() {
     if (!compactUIPopup) return;
 
     const placeholder = getPopupCurrentPlaceholder();
     const combined = resolveCombinedContent(placeholder.key);
-    let text = "⚪ 모든 범위 비활성";
+    const activeScopes = new Set(activeScopesEmpty(combined) ? [] : combined.activeScopes);
 
-    if (!activeScopesEmpty(combined)) {
-        const names = combined.activeScopes.map((scope) => SCOPE_DISPLAY_NAMES[scope]).join(", ");
-        text = `🟢 활성: ${names}`;
-    }
+    SCOPE_ORDER.forEach((scope) => {
+        compactUIPopup
+            .find(`.dm-compact--scope-btn[data-scope="${scope}"]`)
+            .toggleClass("dm-compact--scope-btn--on", activeScopes.has(scope));
+    });
 
-    compactUIPopup.find(".dm-compact--indicator").text(text);
     refreshHistoryButtons();
 }
 
@@ -794,7 +844,6 @@ function syncPopupByCurrentState() {
     const settings = getCurrentScopeState(currentPlaceholder.key);
     editSessionSnapshot = settings.content;
 
-    compactUIPopup.find(".dm-compact--title").text(currentPlaceholder.name);
     compactUIPopup.find(".dm-compact--radio").prop("checked", settings.enabled);
     compactUIPopup
         .find(".dm-compact--textarea")
@@ -894,16 +943,23 @@ function showCompactUIPopup() {
     const popupHtml = `
         <div class="dm-compact--popup">
             <div class="dm-compact--header">
-                <div class="dm-compact--title-row">
-                    <input type="checkbox" class="dm-compact--radio">
-                    <div class="dm-compact--title"></div>
-                </div>
+                <input type="checkbox" class="dm-compact--radio" title="이 범위 켜기/끄기">
+                <div class="dm-compact--header-spacer"></div>
+                <button class="dm-compact--history-btn dm-compact--history-prev" type="button" title="이전 내용 보기">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <button class="dm-compact--history-btn dm-compact--history-next" type="button" title="현재 내용 보기">
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+                <button class="dm-compact--nav dm-compact--clear" title="내용 지우기" type="button">
+                    <i class="fa-solid fa-eraser"></i>
+                </button>
             </div>
 
             <div class="dm-compact--scope-row">
-                <button class="dm-compact--scope-btn" data-scope="global" type="button">전역</button>
-                <button class="dm-compact--scope-btn" data-scope="char" type="button">캐릭터</button>
-                <button class="dm-compact--scope-btn" data-scope="chat" type="button">채팅</button>
+                <button class="dm-compact--scope-btn" data-scope="global" type="button"><span class="dm-compact--scope-emoji">🌐</span>전역</button>
+                <button class="dm-compact--scope-btn" data-scope="char" type="button"><span class="dm-compact--scope-emoji">🎭</span>캐릭터</button>
+                <button class="dm-compact--scope-btn" data-scope="chat" type="button"><span class="dm-compact--scope-emoji">🪄</span>채팅</button>
             </div>
 
             <div class="dm-compact--preset-row">
@@ -922,21 +978,6 @@ function showCompactUIPopup() {
             <div class="dm-compact--content">
                 <textarea class="dm-compact--textarea" placeholder="Direction 내용을 입력하세요..."></textarea>
             </div>
-
-            <div class="dm-compact--footer">
-                <div class="dm-compact--indicator"></div>
-                <div class="dm-compact--footer-actions">
-                    <button class="dm-compact--history-btn dm-compact--history-prev" type="button" title="이전 내용 보기">
-                        <i class="fa-solid fa-arrow-left"></i>
-                    </button>
-                    <button class="dm-compact--history-btn dm-compact--history-next" type="button" title="현재 내용 보기">
-                        <i class="fa-solid fa-arrow-right"></i>
-                    </button>
-                    <button class="dm-compact--nav dm-compact--clear" title="내용 지우기" type="button">
-                        <i class="fa-solid fa-eraser"></i>
-                    </button>
-                </div>
-            </div>
         </div>
     `;
 
@@ -953,11 +994,29 @@ function showCompactUIPopup() {
     // 이벤트 핸들러 설정
     setupCompactUIEventListeners();
     syncPopupByCurrentState();
+
+    // textarea 기본/복원 높이 적용 + 화면을 벗어나지 않도록 상한선을 딱 한 번 계산
+    // (이후 키보드가 열리고 닫혀도 다시 계산하지 않음 — 그게 버벅임의 원인이었음)
+    restoreTextareaHeightForCurrentScope();
+    applyTextareaHeightCap();
 }
 
 // 컴팩트 UI 이벤트 리스너 설정
 function setupCompactUIEventListeners() {
     if (!compactUIPopup) return;
+
+    // 스코프 탭 / 이전·다음 내용 / 지우개 버튼을 누를 때 textarea가 blur되지
+    // 않게 막는다. 모바일 브라우저는 포커스가 textarea를 벗어나면 자동으로
+    // 키보드를 닫는데, mousedown(터치는 touchstart) 시점에 기본 동작만 막으면
+    // 포커스가 유지되어 click 이벤트(버튼 동작 자체)는 그대로 정상 실행된다.
+    compactUIPopup.on("mousedown touchstart", [
+        ".dm-compact--scope-btn",
+        ".dm-compact--history-prev",
+        ".dm-compact--history-next",
+        ".dm-compact--clear",
+    ].join(", "), (e) => {
+        e.preventDefault();
+    });
 
     compactUIPopup.find(".dm-compact--scope-btn").on("click", function () {
         const nextScope = $(this).data("scope");
@@ -978,10 +1037,7 @@ function setupCompactUIEventListeners() {
         syncPopupByCurrentState();
 
         // 전환해 들어온 스코프가 속한 그룹의 높이를 복원 (없으면 기본 크기로 돌아감)
-        const incomingGroup = textareaHeightGroup(nextScope);
-        if (textarea.length) {
-            textarea[0].style.height = compactUITextareaHeights[incomingGroup] || "";
-        }
+        restoreTextareaHeightForCurrentScope();
     });
 
     // 이전 내용 <-> 현재 내용 토글 (두 버튼 모두 동일하게 내용을 맞바꿈)
