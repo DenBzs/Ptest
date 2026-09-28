@@ -137,6 +137,17 @@
     color: var(--SmartThemeBodyColor);
 }
 
+.dm-compact--history-count {
+    min-width: 28px;
+    text-align: center;
+    font-size: 11px;
+    opacity: 0.7;
+    color: var(--SmartThemeBodyColor);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+    user-select: none;
+}
+
 .dm-compact--scope-row {
     display: flex;
     gap: 6px;
