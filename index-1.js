@@ -46,7 +46,7 @@ function defaultPlaceholderState() {
     return {
         enabled: false,
         content: "",
-        previousContent: "",
+        history: [],
     };
 }
 
@@ -58,6 +58,10 @@ const SCOPE_LABELS = {
 };
 
 const SCOPE_ORDER = ["global", "char", "chat"];
+
+// 범위별 이전 내용 보관 개수 / 기록할 최소 글자 수(공백 제외)
+const HISTORY_MAX = 5;
+const HISTORY_MIN_CHARS = 3;
 
 function defaultScopeState() {
     return {
@@ -193,6 +197,118 @@ function applyTextareaHeightCap() {
 }
 // 현재 범위+플레이스홀더를 팝업에 불러온 시점의 content (이전 내용 추적용)
 let editSessionSnapshot = null;
+
+// ─────────────────────────────────────────────────────────────
+// 히스토리(이전 내용): 범위별로 최대 HISTORY_MAX개를 쌓아두고 ←/→ 로 넘겨본다.
+// 기록 시점은 "팝업을 닫을 때 / 범위 탭을 바꿀 때 / 지우개를 누를 때"뿐이라서
+// 타이핑 중에는 히스토리 관련 계산이 전혀 돌지 않는다(입력 버벅임 방지).
+// 공백 제외 HISTORY_MIN_CHARS자 미만(예: ".")은 기록하지 않는다.
+// ─────────────────────────────────────────────────────────────
+// ←/→ 로 넘겨보는 중일 때만 존재하는 런타임 상태 (저장 안 됨).
+// items: [오래된 것 … 최신 저장본, 현재 내용], cursor: 지금 보고 있는 위치
+let historyNav = null;
+
+function isMeaningfulHistoryText(text) {
+    return typeof text === "string" && text.replace(/\s/g, "").length >= HISTORY_MIN_CHARS;
+}
+
+// text를 최신으로 추가한다. 이미 있으면 맨 뒤로 끌어올리고, 넘치면 오래된 것부터 버린다.
+function pushHistory(history, text) {
+    if (!isMeaningfulHistoryText(text)) return history;
+
+    return [...history.filter((item) => item !== text), text].slice(-HISTORY_MAX);
+}
+
+// items에서 excludeIndex(지금 보고 있는 = 현재 내용)만 빼고 히스토리로 만든다.
+function buildHistoryFromItems(items, excludeIndex, current) {
+    let history = [];
+
+    items.forEach((item, i) => {
+        if (i !== excludeIndex) history = pushHistory(history, item);
+    });
+
+    return history.filter((item) => item !== current);
+}
+
+// 저장된 히스토리 + (이번 세션에서 바뀌기 전 내용)에서 현재 내용과 같은 것을 뺀 후보 목록
+function getHistoryCandidates(scopedValue) {
+    let history = scopedValue.history;
+
+    if (editSessionSnapshot !== null && editSessionSnapshot !== scopedValue.content) {
+        history = pushHistory(history, editSessionSnapshot);
+    }
+
+    return history.filter((item) => item !== scopedValue.content);
+}
+
+// 팝업 닫기 / 범위 전환 직전에 호출: 이번 편집 세션의 "바뀌기 전 내용"을 히스토리에 확정한다.
+function flushHistorySession() {
+    if (!compactUIPopup) return;
+
+    // 넘겨보는 중이었다면 매 이동마다 이미 저장돼 있으므로 런타임 상태만 정리한다.
+    if (historyNav) {
+        historyNav = null;
+        editSessionSnapshot = null;
+        return;
+    }
+
+    if (editSessionSnapshot === null) return;
+
+    const placeholder = getPopupCurrentPlaceholder();
+    const scopedValue = getCurrentScopeState(placeholder.key);
+
+    scopedValue.history = getHistoryCandidates(scopedValue);
+    editSessionSnapshot = scopedValue.content;
+
+    if (setCurrentScopeState(placeholder.key, scopedValue)) {
+        saveSettingsDebounced();
+    }
+}
+
+// ← (direction -1) / → (direction +1)
+function navigateHistory(direction) {
+    if (!compactUIPopup) return;
+
+    const placeholder = getPopupCurrentPlaceholder();
+    const scopedValue = getCurrentScopeState(placeholder.key);
+
+    if (!historyNav) {
+        if (direction > 0) return;
+
+        const items = getHistoryCandidates(scopedValue);
+
+        if (!items.length) {
+            toastr.info("이 범위에 저장된 이전 내용이 없습니다.");
+            return;
+        }
+
+        items.push(scopedValue.content);
+        historyNav = { items, cursor: items.length - 1 };
+        // 이번 세션의 이전 내용은 items에 이미 들어갔다.
+        editSessionSnapshot = null;
+    }
+
+    const target = historyNav.cursor + direction;
+
+    if (target < 0 || target >= historyNav.items.length) return;
+
+    historyNav.cursor = target;
+
+    const nextContent = historyNav.items[target];
+
+    scopedValue.content = nextContent;
+    scopedValue.history = buildHistoryFromItems(historyNav.items, target, nextContent);
+
+    if (!setCurrentScopeState(placeholder.key, scopedValue)) {
+        console.warn(`${LOG_PREFIX} 현재 범위에 값을 저장하지 못했습니다.`);
+        return;
+    }
+
+    compactUIPopup.find(".dm-compact--textarea").val(nextContent);
+    applyPlaceholderToSystem(placeholder);
+    saveSettingsDebounced();
+    updateAppliedIndicator();
+}
 // ST 네이티브 Popup(확인/입력창)이 떠 있는 동안 true. 이 동안에는
 // "바깥 클릭시 팝업 닫기" 핸들러가 컴팩트 UI를 닫지 않도록 막는다.
 let isNativePopupOpen = false;
@@ -221,10 +337,19 @@ function getSettings() {
 }
 
 function sanitizePlaceholderValue(value) {
+    let history = [];
+
+    if (Array.isArray(value?.history)) {
+        history = value.history.filter((item) => typeof item === "string" && item).slice(-HISTORY_MAX);
+    } else if (typeof value?.previousContent === "string" && value.previousContent) {
+        // 구버전(이전 내용 1칸) 설정: 히스토리 첫 칸으로 옮겨서 잃어버리지 않게 한다.
+        history = [value.previousContent];
+    }
+
     return {
         enabled: Boolean(value?.enabled),
         content: typeof value?.content === "string" ? value.content : "",
-        previousContent: typeof value?.previousContent === "string" ? value.previousContent : "",
+        history,
     };
 }
 
@@ -816,15 +941,31 @@ function refreshScopeButtons() {
     });
 }
 
-// 이전/현재 내용 토글 버튼: 이 범위에 "이전 내용"이 없으면 비활성화
+// ←/→ 버튼 활성화 + "현재위치/전체" 표시 갱신
 function refreshHistoryButtons() {
     if (!compactUIPopup) return;
 
     const placeholder = getPopupCurrentPlaceholder();
     const scopedValue = getCurrentScopeState(placeholder.key);
-    const hasPrevious = Boolean(scopedValue.previousContent);
 
-    compactUIPopup.find(".dm-compact--history-prev, .dm-compact--history-next").prop("disabled", !hasPrevious);
+    let prevDisabled;
+    let nextDisabled;
+    let label = "";
+
+    if (historyNav) {
+        prevDisabled = historyNav.cursor <= 0;
+        nextDisabled = historyNav.cursor >= historyNav.items.length - 1;
+        label = `${historyNav.cursor + 1}/${historyNav.items.length}`;
+    } else {
+        const count = getHistoryCandidates(scopedValue).length;
+        prevDisabled = count === 0;
+        nextDisabled = true;
+        label = count > 0 ? `${count + 1}/${count + 1}` : "";
+    }
+
+    compactUIPopup.find(".dm-compact--history-prev").prop("disabled", prevDisabled);
+    compactUIPopup.find(".dm-compact--history-next").prop("disabled", nextDisabled);
+    compactUIPopup.find(".dm-compact--history-count").text(label);
 }
 
 function getPresetList(placeholderKey, scope) {
@@ -890,6 +1031,7 @@ function syncPopupByCurrentState() {
     const currentPlaceholder = getPopupCurrentPlaceholder();
     const settings = getCurrentScopeState(currentPlaceholder.key);
     editSessionSnapshot = settings.content;
+    historyNav = null;
 
     compactUIPopup.find(".dm-compact--radio").prop("checked", settings.enabled);
     compactUIPopup
@@ -952,6 +1094,9 @@ function closeCompactUIPopup() {
         commitDirectionContentNow(getPopupCurrentPlaceholder());
     }
 
+    // 이번 세션에서 바뀐 내용이 있으면 바뀌기 전 내용을 히스토리에 확정
+    flushHistorySession();
+
     if (compactUIPopup) {
         compactUIPopup.removeClass("dm-compact--active");
 
@@ -997,7 +1142,8 @@ function showCompactUIPopup() {
                 <button class="dm-compact--history-btn dm-compact--history-prev" type="button" title="이전 내용 보기">
                     <i class="fa-solid fa-arrow-left"></i>
                 </button>
-                <button class="dm-compact--history-btn dm-compact--history-next" type="button" title="현재 내용 보기">
+                <span class="dm-compact--history-count"></span>
+                <button class="dm-compact--history-btn dm-compact--history-next" type="button" title="다음 내용 보기">
                     <i class="fa-solid fa-arrow-right"></i>
                 </button>
                 <button class="dm-compact--nav dm-compact--clear" title="내용 지우기" type="button">
@@ -1098,6 +1244,9 @@ function setupCompactUIEventListeners() {
             return;
         }
 
+        // 벗어나는 범위에서 바뀐 내용이 있으면 바뀌기 전 내용을 히스토리에 확정
+        flushHistorySession();
+
         // 벗어나는 스코프가 속한 그룹의 지금 입력칸 높이를 기억해둔다.
         const textarea = compactUIPopup.find(".dm-compact--textarea");
         const outgoingGroup = textareaHeightGroup(currentScope);
@@ -1112,34 +1261,9 @@ function setupCompactUIEventListeners() {
         restoreTextareaHeightForCurrentScope();
     });
 
-    // 이전 내용 <-> 현재 내용 토글 (두 버튼 모두 동일하게 내용을 맞바꿈)
-    bindTapAction(".dm-compact--history-prev, .dm-compact--history-next", function () {
-        const placeholder = getPopupCurrentPlaceholder();
-        const scopedValue = getCurrentScopeState(placeholder.key);
-
-        if (!scopedValue.previousContent) {
-            toastr.info("이 범위에 저장된 이전 내용이 없습니다.");
-            return;
-        }
-
-        const swapped = {
-            enabled: scopedValue.enabled,
-            content: scopedValue.previousContent,
-            previousContent: scopedValue.content,
-        };
-
-        if (!setCurrentScopeState(placeholder.key, swapped)) {
-            console.warn(`${LOG_PREFIX} 현재 범위에 값을 저장하지 못했습니다.`);
-            return;
-        }
-
-        compactUIPopup.find(".dm-compact--textarea").val(swapped.content);
-        editSessionSnapshot = swapped.content;
-
-        applyPlaceholderToSystem(placeholder);
-        saveSettingsDebounced();
-        updateAppliedIndicator();
-    });
+    // ← 더 이전 내용 / → 더 최근 내용 (히스토리를 한 칸씩 넘김)
+    bindTapAction(".dm-compact--history-prev", () => navigateHistory(-1));
+    bindTapAction(".dm-compact--history-next", () => navigateHistory(1));
 
     // 라디오 버튼 변경 이벤트
     compactUIPopup.find(".dm-compact--radio").on("change", function () {
@@ -1206,15 +1330,22 @@ function setupCompactUIEventListeners() {
         resizeCandidateHeight = null;
     });
 
-    // 지우개 버튼: 확인창 없이 바로 삭제 (지우기 전 내용은 이전 내용으로 남아 화살표로 복원 가능)
+    // 지우개 버튼: 확인창 없이 바로 삭제 (지우기 전 내용은 히스토리에 남아 ←로 복구 가능)
     bindTapAction(".dm-compact--clear", function () {
         const currentPlaceholder = getPopupCurrentPlaceholder();
         const scopedValue = getCurrentScopeState(currentPlaceholder.key);
 
-        if (scopedValue.content) {
-            scopedValue.previousContent = scopedValue.content;
+        let history;
+
+        if (historyNav) {
+            // 넘겨보던 중이면 목록 전체를 그대로 히스토리로 확정
+            history = buildHistoryFromItems(historyNav.items, -1, "");
+            historyNav = null;
+        } else {
+            history = pushHistory(getHistoryCandidates(scopedValue), scopedValue.content);
         }
 
+        scopedValue.history = history;
         scopedValue.content = "";
 
         if (!setCurrentScopeState(currentPlaceholder.key, scopedValue)) {
@@ -1235,13 +1366,15 @@ function setupCompactUIEventListeners() {
         const currentPlaceholder = getPopupCurrentPlaceholder();
         const scopedValue = getCurrentScopeState(currentPlaceholder.key);
 
-        // 이 편집 세션에서 처음으로 내용이 바뀌는 순간의 "이전 내용"을 1회만 보존
-        if (editSessionSnapshot !== null && editSessionSnapshot !== newContent) {
-            scopedValue.previousContent = editSessionSnapshot;
+        scopedValue.content = newContent;
+
+        // ←/→ 로 넘겨보던 중 직접 고치기 시작하면, 넘겨보던 목록을 그대로 히스토리로 확정한다.
+        // (이 분기는 넘겨본 직후 첫 입력에서만 실행되고, 평소 타이핑에는 히스토리 계산이 없다)
+        if (historyNav) {
+            scopedValue.history = buildHistoryFromItems(historyNav.items, -1, newContent);
+            historyNav = null;
             editSessionSnapshot = null;
         }
-
-        scopedValue.content = newContent;
 
         if (!setCurrentScopeState(currentPlaceholder.key, scopedValue)) {
             console.warn(`${LOG_PREFIX} 현재 범위에 값을 저장하지 못했습니다.`);
