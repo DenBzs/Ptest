@@ -157,7 +157,7 @@
     height: 30px;
     padding: 0 10px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: none;
     font-size: 15px;
     font-weight: 600;
     display: inline-flex;
@@ -178,7 +178,7 @@
 .dm-compact--scope-emoji {
     filter: grayscale(1);
     opacity: 0.6;
-    transition: filter 0.2s ease, opacity 0.2s ease;
+    transition: none;
 }
 
 .dm-compact--scope-btn--on .dm-compact--scope-emoji {
