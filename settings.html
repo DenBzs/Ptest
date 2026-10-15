@@ -33,27 +33,29 @@
             </div>
         </div>
         <br>
-        <div class="flex-container flexnowrap dm-depth-row" data-depth-scope="global">
-            <label for="direction_prompt_depth_global" class="flex1">전역 삽입 위치 (Depth)</label>
-            <input id="direction_prompt_depth_global" class="text_pole widthUnset" type="number" min="0" max="100" value="2" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
-        </div>
-        <div class="flex-container flexnowrap dm-depth-row" data-depth-scope="char">
-            <label for="direction_prompt_depth_char" class="flex1">캐릭터 삽입 위치 (Depth)</label>
-            <input id="direction_prompt_depth_char" class="text_pole widthUnset" type="number" min="0" max="100" value="5" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
-        </div>
-        <div class="flex-container flexnowrap dm-depth-row" data-depth-scope="plotMain">
-            <label for="direction_prompt_depth_plotMain" class="flex1">큰 줄거리 삽입 위치 (Depth)</label>
-            <input id="direction_prompt_depth_plotMain" class="text_pole widthUnset" type="number" min="0" max="100" value="3" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
-        </div>
-        <div class="flex-container flexnowrap dm-depth-row" data-depth-scope="plotNext">
-            <label for="direction_prompt_depth_plotNext" class="flex1">작은 줄거리 삽입 위치 (Depth)</label>
-            <input id="direction_prompt_depth_plotNext" class="text_pole widthUnset" type="number" min="0" max="100" value="1" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
-        </div>
-        <div class="flex-container flexnowrap dm-depth-row" data-depth-scope="chat">
-            <label for="direction_prompt_depth_chat" class="flex1">채팅 삽입 위치 (Depth)</label>
-            <input id="direction_prompt_depth_chat" class="text_pole widthUnset" type="number" min="0" max="100" value="0" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
-        </div>
-        <br>
+        <details class="dm-data-details dm-depth-details">
+            <summary>📐 삽입 위치 (Depth)</summary>
+            <div class="flex-container flexnowrap dm-data-row">
+                <label for="direction_prompt_depth_global" class="flex1">전역</label>
+                <input id="direction_prompt_depth_global" class="text_pole widthUnset" type="number" min="0" max="100" value="2" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
+            </div>
+            <div class="flex-container flexnowrap dm-data-row">
+                <label for="direction_prompt_depth_char" class="flex1">캐릭터</label>
+                <input id="direction_prompt_depth_char" class="text_pole widthUnset" type="number" min="0" max="100" value="5" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
+            </div>
+            <div class="flex-container flexnowrap dm-data-row">
+                <label for="direction_prompt_depth_plotMain" class="flex1">큰 줄거리</label>
+                <input id="direction_prompt_depth_plotMain" class="text_pole widthUnset" type="number" min="0" max="100" value="3" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
+            </div>
+            <div class="flex-container flexnowrap dm-data-row">
+                <label for="direction_prompt_depth_plotNext" class="flex1">작은 줄거리</label>
+                <input id="direction_prompt_depth_plotNext" class="text_pole widthUnset" type="number" min="0" max="100" value="1" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
+            </div>
+            <div class="flex-container flexnowrap dm-data-row">
+                <label for="direction_prompt_depth_chat" class="flex1">채팅</label>
+                <input id="direction_prompt_depth_chat" class="text_pole widthUnset" type="number" min="0" max="100" value="0" title="0: Chat History 끝에 삽입, >0: 끝에서부터 N번째 위치에 삽입">
+            </div>
+        </details>
         <details class="dm-data-details">
             <summary>🧹 초기화 · 데이터 삭제</summary>
             <div class="flex-container flexnowrap dm-data-row">
@@ -78,6 +80,13 @@
                 </button>
             </div>
             <div class="flex-container flexnowrap dm-data-row">
+                <span class="flex1">이 채팅방의 줄거리 (큰·작은)</span>
+                <button id="direction_clear_plot" type="button" class="menu_button dm-danger-btn" title="이 채팅방의 줄거리(큰 줄거리·작은 줄거리) 저장 내용 삭제">
+                    <i class="fa-solid fa-book-open"></i>
+                    <span>삭제</span>
+                </button>
+            </div>
+            <div class="flex-container flexnowrap dm-data-row">
                 <span class="flex1">이 채팅방의 채팅 칸</span>
                 <button id="direction_clear_chat" type="button" class="menu_button dm-danger-btn" title="이 채팅방의 채팅 칸 저장 내용 삭제">
                     <i class="fa-solid fa-comment-slash"></i>
@@ -85,10 +94,10 @@
                 </button>
             </div>
             <div class="flex-container flexnowrap dm-data-row">
-                <span class="flex1">이 채팅방의 줄거리 (큰·작은)</span>
-                <button id="direction_clear_plot" type="button" class="menu_button dm-danger-btn" title="이 채팅방의 줄거리(큰 줄거리·작은 줄거리) 저장 내용 삭제">
-                    <i class="fa-solid fa-book-open"></i>
-                    <span>삭제</span>
+                <span class="flex1">⚠️ 모든 채팅방의 전체 데이터</span>
+                <button id="direction_clear_all" type="button" class="menu_button dm-danger-btn" title="모든 채팅방의 전역·캐릭터·줄거리·채팅 칸 내용 삭제 (프리셋·프롬프트는 유지)">
+                    <i class="fa-solid fa-skull-crossbones"></i>
+                    <span>전체 삭제</span>
                 </button>
             </div>
         </details>

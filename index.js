@@ -1175,47 +1175,89 @@ function clearPresetReferences(scope, presetId) {
     });
 }
 
-// 저장 버튼(💾): 열어둔 프리셋과 내용이 달라지면 불이 켜진다. 되돌리기(↩)도 그때만 켜진다.
+// 저장 버튼(💾): 열어둔 프리셋과 내용이 달라지면 불이 켜진다.
 function refreshPresetControls() {
     if (!compactUIPopup || scopeHidesPresets(currentScope)) return;
 
     const placeholder = getPopupCurrentPlaceholder();
     const selectedId = getSelectedPresetId(currentScope);
     const preset = selectedId ? getPresetList(placeholder.key, currentScope).find((item) => item.id === selectedId) : null;
-    const content = getCurrentScopeState(placeholder.key).content;
-    const dirty = Boolean(preset) && content !== preset.content;
+    const dirty = Boolean(preset) && getCurrentScopeState(placeholder.key).content !== preset.content;
 
     compactUIPopup.find(".dm-compact--preset-save").toggleClass("dm-compact--preset-dirty", dirty);
-    compactUIPopup.find(".dm-compact--preset-revert").prop("disabled", !dirty);
-    compactUIPopup.find(".dm-compact--preset-more").prop("disabled", !preset);
-    compactUIPopup.find('.dm-compact--preset-menu [data-action="pin"]').toggle(currentScope === "global");
+    compactUIPopup.find(".dm-compact--preset-rename, .dm-compact--preset-delete").prop("disabled", !preset);
+}
 
-    if (!preset) {
-        compactUIPopup.find(".dm-compact--preset-menu").removeClass("dm-compact--open");
-    }
+// 타이핑 중에는 매 글자마다 계산하지 않고, 멈춘 뒤 한 번만 갱신한다 (렉 방지)
+let presetControlsTimer = null;
+
+function schedulePresetControlsRefresh() {
+    clearTimeout(presetControlsTimer);
+    presetControlsTimer = setTimeout(refreshPresetControls, 150);
+}
+
+// ---- 프리셋 목록 (직접 만든 드롭다운): 줄마다 이름 · ▲▼(순서 편집 중) · ★(기본 지정) · ◯(선택)
+let presetListOpen = false;
+let presetReorderMode = false;
+
+function buildPresetListHtml() {
+    const placeholder = getPopupCurrentPlaceholder();
+    const presets = getPresetList(placeholder.key, currentScope);
+    const pinnedId = getPinnedPreset(currentScope)?.id || "";
+    const selectedId = getSelectedPresetId(currentScope);
+    const canPin = currentScope === "global";
+
+    const rows = presets.map((preset, index) => {
+        const isSelected = preset.id === selectedId;
+        const isPinned = preset.id === pinnedId;
+        const move = presetReorderMode
+            ? `<span class="dm-compact--move${index === 0 ? " dm-compact--move-off" : ""}" data-act="up">▲</span><span class="dm-compact--move${index === presets.length - 1 ? " dm-compact--move-off" : ""}" data-act="down">▼</span>`
+            : "";
+        const star = canPin
+            ? `<span class="dm-compact--star${isPinned ? " dm-compact--star-on" : ""}" data-act="pin" title="기본으로 지정">${isPinned ? "★" : "☆"}</span>`
+            : "";
+
+        return `<div class="dm-compact--preset-item${isSelected ? " dm-compact--preset-item-sel" : ""}" data-id="${preset.id}">`
+            + `<span class="dm-compact--preset-item-name">${escapeHtml(preset.name)}</span>${move}${star}`
+            + `<span class="dm-compact--dot${isSelected ? " dm-compact--dot-on" : ""}"></span></div>`;
+    }).join("");
+
+    const head = `<div class="dm-compact--preset-list-head"><span>프리셋 ${presets.length}개</span>`
+        + `<button type="button" data-act="reorder">${presetReorderMode ? "✔ 완료" : "↕ 순서 편집"}</button></div>`;
+
+    return head + (rows || '<div class="dm-compact--preset-empty">저장된 프리셋이 없어요</div>');
+}
+
+function renderPresetList() {
+    if (!compactUIPopup) return;
+
+    const list = compactUIPopup.find(".dm-compact--preset-list");
+    const scrollTop = list.scrollTop();
+    list.html(buildPresetListHtml()).scrollTop(scrollTop);
+}
+
+function setPresetListOpen(open) {
+    if (!compactUIPopup) return;
+
+    presetListOpen = open;
+    if (!open) presetReorderMode = false;
+
+    compactUIPopup.find(".dm-compact--preset-list").toggleClass("dm-compact--open", open);
+    if (open) renderPresetList();
 }
 
 function renderPresetSelect() {
     if (!compactUIPopup) return;
 
     const placeholder = getPopupCurrentPlaceholder();
-    const select = compactUIPopup.find(".dm-compact--preset-select");
-    const presets = getPresetList(placeholder.key, currentScope);
-    const pinned = getPinnedPreset(currentScope);
     const selectedId = getSelectedPresetId(currentScope);
+    const preset = selectedId ? getPresetList(placeholder.key, currentScope).find((item) => item.id === selectedId) : null;
+    const pinnedId = getPinnedPreset(currentScope)?.id || "";
+    const star = preset && preset.id === pinnedId ? '<span class="dm-compact--star dm-compact--star-on">★</span>' : "";
 
-    select.empty();
+    compactUIPopup.find(".dm-compact--preset-current-name").html(preset ? `${star}${escapeHtml(preset.name)}` : "✨️ 어떤 지시를 내릴까?");
 
-    if (!pinned) {
-        select.append('<option value="">✨️ 어떤 지시를 내릴까?</option>');
-    }
-
-    presets.forEach((preset) => {
-        const mark = pinned && pinned.id === preset.id ? "📌 " : "";
-        select.append(`<option value="${preset.id}">${mark}${escapeHtml(preset.name)}</option>`);
-    });
-
-    select.val(selectedId);
+    if (presetListOpen) renderPresetList();
     refreshPresetControls();
 }
 
@@ -1273,6 +1315,7 @@ function syncPopupByCurrentState() {
     if (!compactUIPopup) return;
 
     ensureUsableCurrentScope();
+    setPresetListOpen(false);
 
     const currentPlaceholder = getPopupCurrentPlaceholder();
     const settings = getCurrentScopeState(currentPlaceholder.key);
@@ -1365,6 +1408,10 @@ function closeCompactUIPopup() {
         compactUIButton.removeAttr("data-dm-popup-open");
     }
 
+    clearTimeout(presetControlsTimer);
+    presetListOpen = false;
+    presetReorderMode = false;
+
     $(document).off("click.compactUI");
     $(document).off("mouseup.dmResize touchend.dmResize");
 }
@@ -1410,26 +1457,25 @@ function showCompactUIPopup() {
             </div>
 
             <div class="dm-compact--preset-row">
-                <select class="dm-compact--preset-select" aria-label="프리셋 선택"></select>
+                <button class="dm-compact--preset-current" type="button" title="프리셋 목록 열기">
+                    <span class="dm-compact--preset-current-name"></span>
+                    <i class="fa-solid fa-caret-down"></i>
+                </button>
                 <button class="dm-compact--preset-btn dm-compact--preset-save" type="button" title="이 프리셋에 저장 (내용이 바뀌면 불이 켜져요)">
                     <i class="fa-solid fa-floppy-disk"></i>
-                </button>
-                <button class="dm-compact--preset-btn dm-compact--preset-revert" type="button" title="저장된 프리셋 내용으로 되돌리기">
-                    <i class="fa-solid fa-rotate-left"></i>
                 </button>
                 <button class="dm-compact--preset-btn dm-compact--preset-new" type="button" title="새 프리셋으로 저장">
                     <i class="fa-solid fa-plus"></i>
                 </button>
-                <button class="dm-compact--preset-btn dm-compact--preset-more" type="button" title="더보기 (이름 변경·순서·삭제)">
-                    <i class="fa-solid fa-ellipsis"></i>
+                <button class="dm-compact--preset-btn dm-compact--preset-rename" type="button" title="프리셋 이름 변경">
+                    <i class="fa-solid fa-pen"></i>
+                </button>
+                <button class="dm-compact--preset-btn dm-compact--preset-delete" type="button" title="프리셋 삭제">
+                    <i class="fa-solid fa-trash"></i>
                 </button>
             </div>
-            <div class="dm-compact--preset-menu">
-                <button type="button" data-action="rename">✏️ 이름 변경</button>
-                <button type="button" data-action="pin">📌 기본으로 지정</button>
-                <button type="button" data-action="up">▲ 위로</button>
-                <button type="button" data-action="down">▼ 아래로</button>
-                <button type="button" data-action="delete">🗑 삭제</button>
+            <div class="dm-compact--preset-anchor">
+                <div class="dm-compact--preset-list"></div>
             </div>
 
             <div class="dm-compact--content">
@@ -1655,24 +1701,58 @@ function setupCompactUIEventListeners() {
         }, 250);
 
         saveSettingsDebounced();
-        refreshPresetControls();
+        schedulePresetControlsRefresh();
     });
 
-    compactUIPopup.find(".dm-compact--preset-select").on("change", function () {
-        const presetId = String($(this).val() || "");
+    function selectPreset(preset) {
         const placeholder = getPopupCurrentPlaceholder();
-        const preset = getPresetList(placeholder.key, currentScope).find((item) => item.id === presetId);
-
-        if (!preset) {
-            renderPresetSelect();
-            return;
-        }
 
         setSelectedPresetId(currentScope, preset.id);
         getScopeTextarea(currentScope).val(preset.content).trigger("input");
         commitDirectionContentNow(placeholder);
         saveSettingsDebounced();
+        setPresetListOpen(false);
         renderPresetSelect();
+    }
+
+    compactUIPopup.find(".dm-compact--preset-current").on("click", () => setPresetListOpen(!presetListOpen));
+
+    // 목록 안의 모든 동작은 한 곳에서 받는다 (줄마다 리스너를 달지 않는다)
+    compactUIPopup.find(".dm-compact--preset-list").on("click", (e) => {
+        const placeholder = getPopupCurrentPlaceholder();
+        const settings = getSettings();
+        const list = getPresetList(placeholder.key, currentScope);
+        const actEl = $(e.target).closest("[data-act]");
+        const act = actEl.length ? String(actEl.data("act")) : "";
+        const itemEl = $(e.target).closest(".dm-compact--preset-item");
+        const id = itemEl.length ? String(itemEl.data("id")) : "";
+        const index = list.findIndex((item) => item.id === id);
+
+        if (act === "reorder") {
+            presetReorderMode = !presetReorderMode;
+            renderPresetList();
+        } else if (act === "pin" && index >= 0) {
+            settings.presetPins[currentScope] = id;
+            saveSettingsDebounced();
+            renderPresetSelect();
+        } else if ((act === "up" || act === "down") && index >= 0) {
+            const swapWith = index + (act === "up" ? -1 : 1);
+
+            if (swapWith < 0 || swapWith >= list.length) return;
+
+            [list[index], list[swapWith]] = [list[swapWith], list[index]];
+            saveSettingsDebounced();
+            renderPresetList();
+        } else if (index >= 0 && !presetReorderMode) {
+            selectPreset(list[index]);
+        }
+    });
+
+    // 팝업의 다른 곳을 누르면 목록을 닫는다
+    compactUIPopup.on("click", (e) => {
+        if (presetListOpen && !$(e.target).closest(".dm-compact--preset-list, .dm-compact--preset-current").length) {
+            setPresetListOpen(false);
+        }
     });
 
     async function saveCurrentAsNewPreset() {
@@ -1720,65 +1800,43 @@ function setupCompactUIEventListeners() {
 
     compactUIPopup.find(".dm-compact--preset-new").on("click", saveCurrentAsNewPreset);
 
-    compactUIPopup.find(".dm-compact--preset-revert").on("click", () => {
+    compactUIPopup.find(".dm-compact--preset-rename").on("click", async () => {
         const placeholder = getPopupCurrentPlaceholder();
-        const selectedId = getSelectedPresetId(currentScope);
-        const preset = selectedId ? getPresetList(placeholder.key, currentScope).find((item) => item.id === selectedId) : null;
+        const list = getPresetList(placeholder.key, currentScope);
+        const target = list.find((item) => item.id === getSelectedPresetId(currentScope));
 
-        if (!preset) return;
+        if (!target) return;
 
-        setSelectedPresetId(currentScope, preset.id);
-        getScopeTextarea(currentScope).val(preset.content).trigger("input");
-        commitDirectionContentNow(placeholder);
+        const newName = await showNativeInput("프리셋 이름 변경", "새 프리셋 이름을 입력하세요:", target.name);
+
+        if (!newName || !newName.trim()) return;
+
+        target.name = newName.trim();
         saveSettingsDebounced();
         renderPresetSelect();
     });
 
-    compactUIPopup.find(".dm-compact--preset-more").on("click", () => {
-        compactUIPopup.find(".dm-compact--preset-menu").toggleClass("dm-compact--open");
-    });
-
-    compactUIPopup.find(".dm-compact--preset-menu").on("click", "button", async function () {
-        const action = String($(this).data("action"));
+    compactUIPopup.find(".dm-compact--preset-delete").on("click", async () => {
         const placeholder = getPopupCurrentPlaceholder();
         const settings = getSettings();
         const list = getPresetList(placeholder.key, currentScope);
-        const presetId = getSelectedPresetId(currentScope);
-        const index = list.findIndex((item) => item.id === presetId);
+        const index = list.findIndex((item) => item.id === getSelectedPresetId(currentScope));
 
         if (index < 0) return;
 
         const target = list[index];
 
-        if (action === "rename") {
-            const newName = await showNativeInput("프리셋 이름 변경", "새 프리셋 이름을 입력하세요:", target.name);
-
-            if (!newName || !newName.trim()) return;
-
-            target.name = newName.trim();
-        } else if (action === "pin") {
-            settings.presetPins[currentScope] = target.id;
-            toastr.success(`"${target.name}"을(를) 기본으로 지정했어요. 프리셋을 고르지 않은 채팅방은 이걸로 열려요.`);
-        } else if (action === "up" || action === "down") {
-            const swapWith = index + (action === "up" ? -1 : 1);
-
-            if (swapWith < 0 || swapWith >= list.length) return;
-
-            [list[index], list[swapWith]] = [list[swapWith], list[index]];
-        } else if (action === "delete") {
-            if (settings.presetPins[currentScope] === target.id) {
-                toastr.warning("기본으로 지정된 프리셋은 삭제할 수 없어요. 다른 프리셋을 기본으로 지정한 뒤 삭제해 주세요.");
-                return;
-            }
-
-            const confirmed = await showNativeConfirm("프리셋 삭제", `"${target.name}" 프리셋을 삭제하시겠습니까? (이 프리셋을 쓰던 채팅방의 내용은 그대로 남아요)`);
-
-            if (!confirmed) return;
-
-            list.splice(index, 1);
-            clearPresetReferences(currentScope, target.id);
+        if (settings.presetPins[currentScope] === target.id) {
+            toastr.warning("기본(★)으로 지정된 프리셋은 삭제할 수 없어요. 다른 프리셋에 ★를 켠 뒤 삭제해 주세요.");
+            return;
         }
 
+        const confirmed = await showNativeConfirm("프리셋 삭제", `"${target.name}" 프리셋을 삭제하시겠습니까? (이 프리셋을 쓰던 채팅방의 내용은 그대로 남아요)`);
+
+        if (!confirmed) return;
+
+        list.splice(index, 1);
+        clearPresetReferences(currentScope, target.id);
         saveSettingsDebounced();
         renderPresetSelect();
     });
@@ -1886,7 +1944,6 @@ function updateExtensionMenuUI() {
 
     SCOPE_ORDER.forEach((scope) => {
         $(`#direction_prompt_depth_${scope}`).val(settings.promptDepth?.[scope] ?? DEFAULT_PROMPT_DEPTHS[scope]);
-        $(`.dm-depth-row[data-depth-scope="${scope}"]`).toggleClass("dm-hidden", scope !== promptEditorScope);
     });
 
     refreshPromptEditorState();
@@ -1911,6 +1968,36 @@ async function clearCurrentCharScopeData() {
     applyAllPlaceholders();
     saveSettingsDebounced();
     refreshPopupIfOpened();
+}
+
+async function clearAllScopeData() {
+    const first = await showNativeConfirm("모든 채팅방 데이터 삭제", "모든 채팅방의 전역·캐릭터·줄거리·채팅 칸 내용을 전부 삭제합니다. 프리셋과 프롬프트·Depth 설정은 그대로예요. 되돌릴 수 없어요. 계속할까요?");
+
+    if (!first) {
+        return;
+    }
+
+    const second = await showNativeConfirm("정말 삭제할까요?", "마지막 확인이에요. 모든 채팅방에 저장된 칸 내용이 사라집니다.", { okButton: "전부 삭제", cancelButton: "취소" });
+
+    if (!second) {
+        return;
+    }
+
+    const settings = getSettings();
+    const enabled = Boolean(settings.global?.direction?.enabled);
+
+    settings.global = sanitizeScopeState({ direction: { enabled, entries: [""], activeIndex: 0 } });
+    settings.globals = {};
+    settings.chars = {};
+    settings.chats = {};
+    Object.values(PLOT_STORE).forEach((storeKey) => {
+        settings[storeKey] = {};
+    });
+
+    applyAllPlaceholders();
+    saveSettingsDebounced();
+    refreshPopupIfOpened();
+    toastr.success("모든 채팅방의 저장 내용을 삭제했어요.");
 }
 
 async function clearCurrentGlobalScopeData() {
@@ -2072,6 +2159,7 @@ function setupExtensionMenuEventHandlers() {
     });
 
     $("#direction_clear_global").on("click", clearCurrentGlobalScopeData);
+    $("#direction_clear_all").on("click", clearAllScopeData);
     $("#direction_clear_char").on("click", clearCurrentCharScopeData);
     $("#direction_clear_chat").on("click", clearCurrentChatScopeData);
     $("#direction_clear_plot").on("click", clearCurrentPlotScopeData);
