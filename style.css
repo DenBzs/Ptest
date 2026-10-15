@@ -27,7 +27,7 @@
 }
 
 .dm-compact--popup {
-    filter: drop-shadow(1px 1px 2px var(--black50a));
+    box-shadow: 1px 1px 4px var(--black50a);
     z-index: 30000;
     overflow: hidden;
     border-radius: 10px;

@@ -99,7 +99,9 @@ const TAB_SCOPES = {
 };
 
 // 숫자가 작을수록 최신 메시지에 가깝다 (0 = 맨 끝)
-const DEFAULT_PROMPT_DEPTHS = { global: 2, char: 5, plotMain: 3, plotNext: 1, chat: 0 };
+const DEFAULT_PROMPT_DEPTHS = { global: 0, char: 2, plotMain: 4, plotNext: 3, chat: 1 };
+// v1.6 이전 기본값 (이 값 그대로 쓰던 사람만 새 기본값으로 옮겨 준다)
+const LEGACY_PROMPT_DEPTHS_V7 = { global: 2, char: 5, plotMain: 3, plotNext: 1, chat: 0 };
 
 // 줄거리 두 칸은 채팅(대화) 단위로 저장된다. settings 안의 보관함 이름.
 const PLOT_STORE = { plotMain: "plotMains", plotNext: "plotNexts" };
@@ -159,6 +161,7 @@ const defaultSettings = {
     _migratedV5: false,
     _migratedV6: false,
     _migratedV7: false,
+    _migratedV8: false,
 };
 
 let currentScope = "chat";
@@ -603,6 +606,7 @@ function normalizeSettings() {
     settings._migratedV5 = Boolean(settings._migratedV5);
     settings._migratedV6 = Boolean(settings._migratedV6);
     settings._migratedV7 = Boolean(settings._migratedV7);
+    settings._migratedV8 = Boolean(settings._migratedV8);
 
     Object.keys(settings.globals).forEach((key) => {
         settings.globals[key] = sanitizeScopeState(settings.globals[key]);
@@ -786,6 +790,28 @@ function migrateV7DefaultPresetIfNeeded() {
     return true;
 }
 
+// v8: 삽입 위치(Depth) 기본값 변경 (전역 0 / 채팅 1 / 캐릭터 2 / 작은 줄거리 3 / 큰 줄거리 4).
+// 예전 기본값 그대로 쓰던 경우에만 새 기본값으로 바꾸고, 직접 바꾼 값은 건드리지 않는다.
+function migrateV8DepthDefaultsIfNeeded() {
+    const settings = getSettings();
+
+    if (settings._migratedV8) {
+        return false;
+    }
+
+    const depth = settings.promptDepth;
+    const isLegacyDefault = depth && typeof depth === "object"
+        && Object.keys(LEGACY_PROMPT_DEPTHS_V7).every((scope) => depth[scope] === LEGACY_PROMPT_DEPTHS_V7[scope]);
+
+    if (isLegacyDefault) {
+        settings.promptDepth = { ...DEFAULT_PROMPT_DEPTHS };
+        console.log(`${LOG_PREFIX} 삽입 위치(Depth)를 새 기본값으로 바꿨습니다.`);
+    }
+
+    settings._migratedV8 = true;
+    return true;
+}
+
 async function loadSettings() {
     const settings = getSettings();
 
@@ -801,8 +827,9 @@ async function loadSettings() {
     const pruned = pruneRemovedPlaceholders();
     normalizeSettings();
     const migratedV7 = migrateV7DefaultPresetIfNeeded();
+    const migratedV8 = migrateV8DepthDefaultsIfNeeded();
 
-    if (migrated || migratedV3 || migratedV4 || migratedV5 || migratedV6 || migratedV7 || pruned) {
+    if (migrated || migratedV3 || migratedV4 || migratedV5 || migratedV6 || migratedV7 || migratedV8 || pruned) {
         saveSettingsDebounced();
     }
 }
