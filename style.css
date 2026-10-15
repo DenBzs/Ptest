@@ -317,8 +317,8 @@
     .dm-compact--preset-btn,
     .dm-compact--history-btn,
     .dm-compact--preset-row .dm-compact--preset-btn {
-        width: 24px;
-        height: 24px;
+        width: 22px;
+        height: 22px;
         font-size: 10px;
     }
 
@@ -382,15 +382,16 @@
 /* ===== v1.7 : 하단 팝업 프리셋 줄 ===== */
 
 .dm-compact--preset-row .dm-compact--preset-btn {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
     box-sizing: border-box;
 }
 
 .dm-compact--preset-current {
     flex: 1;
     min-width: 0;
-    height: 30px;
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -428,17 +429,20 @@
     z-index: 5;
 }
 
+/* 목록이 열리면 앵커가 목록 높이만큼 자라서, 팝업이 늘어나며 프리셋이 전부 보인다 */
+.dm-compact--popup.dm-compact--list-open .dm-compact--preset-anchor {
+    height: auto;
+    padding: 3px 6px 2px;
+}
+
 .dm-compact--popup.dm-compact--hide-preset .dm-compact--preset-anchor {
     display: none;
 }
 
 .dm-compact--preset-list {
     display: none;
-    position: absolute;
-    top: 3px;
-    left: 6px;
-    right: 6px;
-    max-height: min(340px, 55vh);
+    position: static;
+    max-height: min(260px, 40vh);
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -480,9 +484,9 @@
 .dm-compact--preset-item {
     display: flex;
     align-items: center;
-    gap: 6px;
-    min-height: 32px;
-    padding: 2px 8px;
+    gap: 4px;
+    min-height: 26px;
+    padding: 1px 8px;
     border-bottom: 1px solid var(--SmartThemeBorderColor);
     cursor: pointer;
 }
@@ -512,9 +516,9 @@
 }
 
 .dm-compact--star {
-    font-size: 18px;
+    font-size: 14px;
     line-height: 1;
-    padding: 4px 5px;
+    padding: 2px 4px;
     color: var(--grey30, #888);
     opacity: 0.7;
 }
@@ -531,11 +535,11 @@
 }
 
 .dm-compact--move {
-    font-size: 13px;
+    font-size: 10px;
     line-height: 1;
-    padding: 6px 9px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 6px;
+    padding: 3px 5px;
+    border: none;
+    border-radius: 4px;
 }
 
 .dm-compact--move-off {
@@ -545,8 +549,8 @@
 
 .dm-compact--dot {
     flex-shrink: 0;
-    width: 16px;
-    height: 16px;
+    width: 12px;
+    height: 12px;
     box-sizing: border-box;
     border: 2px solid var(--SmartThemeBorderColor);
     border-radius: 50%;
