@@ -1,5 +1,5 @@
 {
-    "display_name": "🪄전개지시M",
+    "display_name": "🪄전개지시M test",
     "loading_order": 9,
     "requires": [],
     "optional": [],
@@ -7,6 +7,6 @@
     "css": "style.css",
     "author": "custom",
     "version": "1.6",
-    "homePage": "https://github.com/DenBzs/Direction-Manager-DB",
+    "homePage": "https://github.com/DenBzs/Ptest",
     "auto_update": false
 }
