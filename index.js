@@ -71,7 +71,7 @@ const DEFAULT_DIRECTION_PROMPTS = {
 
 function defaultPlaceholderState() {
     return {
-        enabled: true,
+        enabled: false,
         entries: [""],
         activeIndex: 0,
         content: "",
@@ -389,7 +389,7 @@ function sanitizePlaceholderValue(value) {
     activeIndex = Math.min(Math.max(activeIndex, 0), entries.length - 1);
 
     return {
-        enabled: value?.enabled === undefined ? true : Boolean(value.enabled),
+        enabled: Boolean(value?.enabled),
         entries,
         activeIndex,
         content: entries[activeIndex],
