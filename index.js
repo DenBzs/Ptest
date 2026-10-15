@@ -1736,7 +1736,17 @@ function setupCompactUIEventListeners() {
         const placeholder = getPopupCurrentPlaceholder();
 
         setSelectedPresetId(currentScope, preset.id);
-        getScopeTextarea(currentScope).val(preset.content).trigger("input");
+
+        // 프리셋을 고르면 ←/→ 기록을 이 프리셋 내용 기준으로 새로 시작한다.
+        // (이전에 보던 프리셋의 내용이 기록에 끼어들어 ←로 나오는 것을 막는다)
+        const scopedValue = getCurrentScopeState(placeholder.key);
+        scopedValue.entries = [preset.content];
+        scopedValue.activeIndex = 0;
+        scopedValue.content = preset.content;
+        setCurrentScopeState(placeholder.key, scopedValue);
+
+        getScopeTextarea(currentScope).val(preset.content);
+        beginHistorySession(scopedValue);
         commitDirectionContentNow(placeholder);
         saveSettingsDebounced();
         setPresetListOpen(false);
