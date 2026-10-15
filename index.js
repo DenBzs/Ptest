@@ -1242,6 +1242,7 @@ function setPresetListOpen(open) {
     presetListOpen = open;
     if (!open) presetReorderMode = false;
 
+    compactUIPopup.toggleClass("dm-compact--list-open", open);
     compactUIPopup.find(".dm-compact--preset-list").toggleClass("dm-compact--open", open);
     if (open) renderPresetList();
 }
