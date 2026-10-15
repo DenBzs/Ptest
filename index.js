@@ -71,7 +71,7 @@ const DEFAULT_DIRECTION_PROMPTS = {
 
 function defaultPlaceholderState() {
     return {
-        enabled: false,
+        enabled: true,
         entries: [""],
         activeIndex: 0,
         content: "",
@@ -389,7 +389,7 @@ function sanitizePlaceholderValue(value) {
     activeIndex = Math.min(Math.max(activeIndex, 0), entries.length - 1);
 
     return {
-        enabled: Boolean(value?.enabled),
+        enabled: value?.enabled === undefined ? true : Boolean(value.enabled),
         entries,
         activeIndex,
         content: entries[activeIndex],
@@ -1719,6 +1719,9 @@ function setupCompactUIEventListeners() {
 
     // 목록 안의 모든 동작은 한 곳에서 받는다 (줄마다 리스너를 달지 않는다)
     compactUIPopup.find(".dm-compact--preset-list").on("click", (e) => {
+        // 목록을 다시 그리면 눌린 요소가 사라져서 "팝업 바깥을 눌렀다"로 오해받는다 → 여기서 이벤트를 끝낸다
+        e.stopPropagation();
+
         const placeholder = getPopupCurrentPlaceholder();
         const settings = getSettings();
         const list = getPresetList(placeholder.key, currentScope);
@@ -1843,6 +1846,11 @@ function setupCompactUIEventListeners() {
 
     $(document).on("click.compactUI", (e) => {
         if (isNativePopupOpen) {
+            return;
+        }
+
+        // 이미 화면에서 사라진 요소(다시 그려진 목록 줄 등)를 누른 경우는 바깥 클릭이 아니다
+        if (!e.target.isConnected) {
             return;
         }
 

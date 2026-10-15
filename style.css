@@ -203,7 +203,7 @@
     display: flex;
     gap: 5px;
     padding: 2px 8px 0;
-    align-items: stretch;
+    align-items: center;
     flex-shrink: 0;
 }
 
@@ -315,10 +315,16 @@
 
     .dm-compact--nav,
     .dm-compact--preset-btn,
-    .dm-compact--history-btn {
+    .dm-compact--history-btn,
+    .dm-compact--preset-row .dm-compact--preset-btn {
         width: 24px;
         height: 24px;
         font-size: 10px;
+    }
+
+    .dm-compact--preset-current {
+        height: 26px;
+        font-size: 12px;
     }
 
     .dm-compact--title {
@@ -376,16 +382,15 @@
 /* ===== v1.7 : 하단 팝업 프리셋 줄 ===== */
 
 .dm-compact--preset-row .dm-compact--preset-btn {
-    width: 34px;
-    height: auto;
-    min-height: 32px;
+    width: 28px;
+    height: 28px;
     box-sizing: border-box;
 }
 
 .dm-compact--preset-current {
     flex: 1;
     min-width: 0;
-    min-height: 32px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -433,7 +438,7 @@
     top: 3px;
     left: 6px;
     right: 6px;
-    max-height: min(300px, 50vh);
+    max-height: min(340px, 55vh);
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -455,7 +460,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 10px;
+    padding: 4px 8px;
     font-size: 12px;
     opacity: 0.95;
     background-color: var(--secondaryBg, var(--SmartThemeBlurTintColor));
@@ -475,9 +480,9 @@
 .dm-compact--preset-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    min-height: 42px;
-    padding: 4px 10px;
+    gap: 6px;
+    min-height: 32px;
+    padding: 2px 8px;
     border-bottom: 1px solid var(--SmartThemeBorderColor);
     cursor: pointer;
 }
@@ -492,7 +497,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .dm-compact--preset-item-sel .dm-compact--preset-item-name {
@@ -507,9 +512,9 @@
 }
 
 .dm-compact--star {
-    font-size: 20px;
+    font-size: 18px;
     line-height: 1;
-    padding: 6px;
+    padding: 4px 5px;
     color: var(--grey30, #888);
     opacity: 0.7;
 }
@@ -526,9 +531,9 @@
 }
 
 .dm-compact--move {
-    font-size: 16px;
+    font-size: 13px;
     line-height: 1;
-    padding: 9px 10px;
+    padding: 6px 9px;
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 6px;
 }
@@ -540,8 +545,8 @@
 
 .dm-compact--dot {
     flex-shrink: 0;
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     box-sizing: border-box;
     border: 2px solid var(--SmartThemeBorderColor);
     border-radius: 50%;
