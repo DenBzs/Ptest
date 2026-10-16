@@ -16,6 +16,12 @@ const DEFAULT_DIRECTION_PROMPT_CHAT = `<direction>
 [Direction(If blank, develop the story as you see fit): {{direction}}]
 </direction>`;
 
+const DEFAULT_DIRECTION_PROMPT_AU = `<au_rules>
+- Follow this story's world rules consistently, but do not list or explain the setting. Weave it naturally into the characters' actions, dialogue, and events.
+
+{{direction}}
+</au_rules>`;
+
 const DEFAULT_DIRECTION_PROMPT_GLOBAL = `<format_rules>
 - These are standing formatting/style rules for every reply in this roleplay. Follow them exactly, without exception, for as long as they are enabled below.
 - Do not quote or restate these rules in your reply; just apply them silently.
@@ -63,6 +69,7 @@ const DEFAULT_DIRECTION_PROMPT = DEFAULT_DIRECTION_PROMPT_CHAT;
 
 const DEFAULT_DIRECTION_PROMPTS = {
     global: DEFAULT_DIRECTION_PROMPT_GLOBAL,
+    au: DEFAULT_DIRECTION_PROMPT_AU,
     char: DEFAULT_DIRECTION_PROMPT_CHAR,
     plotMain: DEFAULT_DIRECTION_PROMPT_PLOT_MAIN,
     plotNext: DEFAULT_DIRECTION_PROMPT_PLOT_NEXT,
@@ -80,26 +87,28 @@ function defaultPlaceholderState() {
 
 const SCOPE_LABELS = {
     global: "[Format Rules]",
+    au: "[AU Rules]",
     char: "[Character Notes]",
     plotMain: "[Story Direction]",
     plotNext: "[Next Beats]",
     chat: "[Director's Note]",
 };
 
-// 저장·프롬프트 주입 단위(총 5개). 화면의 탭은 아래 TAB_*로 묶는다.
-const SCOPE_ORDER = ["global", "char", "plotMain", "plotNext", "chat"];
+// 저장·프롬프트 주입 단위(총 6개). 화면의 탭은 아래 TAB_*로 묶는다.
+const SCOPE_ORDER = ["global", "au", "char", "plotMain", "plotNext", "chat"];
 
 // 화면 탭: 줄거리 탭 하나 안에 큰 줄거리(plotMain) / 작은 줄거리(plotNext) 두 칸이 들어 있다.
-const TAB_ORDER = ["global", "char", "plot", "chat"];
+const TAB_ORDER = ["global", "au", "char", "plot", "chat"];
 const TAB_SCOPES = {
     global: ["global"],
+    au: ["au"],
     char: ["char"],
     plot: ["plotMain", "plotNext"],
     chat: ["chat"],
 };
 
 // 숫자가 작을수록 최신 메시지에 가깝다 (0 = 맨 끝)
-const DEFAULT_PROMPT_DEPTHS = { global: 0, char: 2, plotMain: 4, plotNext: 3, chat: 1 };
+const DEFAULT_PROMPT_DEPTHS = { global: 0, au: 2, char: 2, plotMain: 4, plotNext: 3, chat: 1 };
 // v1.6 이전 기본값 (이 값 그대로 쓰던 사람만 새 기본값으로 옮겨 준다)
 const LEGACY_PROMPT_DEPTHS_V7 = { global: 2, char: 5, plotMain: 3, plotNext: 1, chat: 0 };
 
@@ -124,7 +133,7 @@ function getTabScopes(scope) {
 
 // 채팅·줄거리 탭은 프리셋 줄을 빼고 그만큼 입력칸을 쓴다
 function scopeHidesPresets(scope) {
-    return scope === "chat" || scopeToTab(scope) === "plot";
+    return scope === "chat" || scope === "char" || scopeToTab(scope) === "plot";
 }
 
 // 기록에 남는 항목의 최대 개수(현재 보고 있는 칸 포함). 화면에는 N/5로 표시된다.
@@ -136,6 +145,8 @@ const HISTORY_MAX = HISTORY_TOTAL_MAX - 1;
 function defaultScopeState() {
     return {
         direction: defaultPlaceholderState(),
+        presetId: "",
+        activePresetIds: [],
     };
 }
 
@@ -146,7 +157,8 @@ const defaultSettings = {
     plotMains: {},
     plotNexts: {},
     globals: {},
-    presetPins: { global: "", char: "" },
+    aus: {},
+    presetPins: { global: "", au: "", char: "" },
     presets: {
         direction: { global: [], char: [], plotMain: [], plotNext: [], chat: [] },
     },
@@ -404,6 +416,7 @@ function sanitizeScopeState(scopeState) {
     return {
         direction: sanitizePlaceholderValue(source.direction),
         presetId: typeof source.presetId === "string" ? source.presetId : "",
+        activePresetIds: Array.isArray(source.activePresetIds) ? [...new Set(source.activePresetIds.filter((id) => typeof id === "string"))] : [],
     };
 }
 
@@ -424,6 +437,7 @@ function sanitizeScopePresets(scopePresets) {
 
     return {
         global: sanitizePresetList(src.global),
+        au: sanitizePresetList(src.au),
         char: sanitizePresetList(src.char),
         plotMain: sanitizePresetList(src.plotMain),
         plotNext: sanitizePresetList(src.plotNext),
@@ -591,9 +605,11 @@ function normalizeSettings() {
     });
     settings.presets = sanitizePresets(settings.presets);
     settings.globals = settings.globals && typeof settings.globals === "object" ? settings.globals : {};
+    settings.aus = settings.aus && typeof settings.aus === "object" ? settings.aus : {};
     const pins = settings.presetPins && typeof settings.presetPins === "object" ? settings.presetPins : {};
     settings.presetPins = {
         global: typeof pins.global === "string" ? pins.global : "",
+        au: Array.isArray(pins.au) ? pins.au.filter((id) => typeof id === "string") : (typeof pins.au === "string" && pins.au ? [pins.au] : []),
         char: typeof pins.char === "string" ? pins.char : "",
     };
     settings.extensionEnabled = typeof settings.extensionEnabled === "boolean" ? settings.extensionEnabled : defaultSettings.extensionEnabled;
@@ -607,9 +623,13 @@ function normalizeSettings() {
     settings._migratedV6 = Boolean(settings._migratedV6);
     settings._migratedV7 = Boolean(settings._migratedV7);
     settings._migratedV8 = Boolean(settings._migratedV8);
+    settings._migratedAU = Boolean(settings._migratedAU);
 
     Object.keys(settings.globals).forEach((key) => {
         settings.globals[key] = sanitizeScopeState(settings.globals[key]);
+    });
+    Object.keys(settings.aus).forEach((key) => {
+        settings.aus[key] = sanitizeScopeState(settings.aus[key]);
     });
 
     Object.keys(settings.chars).forEach((key) => {
@@ -812,6 +832,35 @@ function migrateV8DepthDefaultsIfNeeded() {
     return true;
 }
 
+
+function migrateAUPresetsIfNeeded() {
+    const settings = getSettings();
+    if (settings._migratedAU) return false;
+    settings.presets = sanitizePresets(settings.presets);
+    settings.aus = settings.aus && typeof settings.aus === "object" ? settings.aus : {};
+    const oldChar = settings.presets.direction.char || [];
+    const auList = settings.presets.direction.au || [];
+    oldChar.forEach((preset) => {
+        const alreadyMoved = auList.some((item) => item.name === preset.name && item.content === preset.content);
+        if (!alreadyMoved) {
+            auList.push({ id: generatePresetId(), name: preset.name, content: preset.content });
+        }
+    });
+    settings.presets.direction.au = auList;
+    // 캐릭터 탭에서 프리셋 줄을 제거하므로, 기존 프리셋은 AU로 이전한 뒤 옛 목록을 비운다.
+    settings.presets.direction.char = [];
+    // 기존 채팅방에는 다중 활성화 상태가 없었으므로, 기존에 열어 둔 프리셋 또는 기본 프리셋을 활성화 상태로 이전한다.
+    Object.values(settings.globals || {}).forEach((entry) => {
+        if (!Array.isArray(entry.activePresetIds) || entry.activePresetIds.length === 0) {
+            const id = entry.presetId || settings.presetPins?.global;
+            entry.activePresetIds = id ? [id] : [];
+        }
+    });
+    settings._migratedAU = true;
+    console.log(`${LOG_PREFIX} AU 프리셋을 초기화하고 기존 캐릭터 프리셋을 AU로 복사했습니다.`);
+    return true;
+}
+
 async function loadSettings() {
     const settings = getSettings();
 
@@ -828,14 +877,15 @@ async function loadSettings() {
     normalizeSettings();
     const migratedV7 = migrateV7DefaultPresetIfNeeded();
     const migratedV8 = migrateV8DepthDefaultsIfNeeded();
+    const migratedAU = migrateAUPresetsIfNeeded();
 
-    if (migrated || migratedV3 || migratedV4 || migratedV5 || migratedV6 || migratedV7 || migratedV8 || pruned) {
+    if (migrated || migratedV3 || migratedV4 || migratedV5 || migratedV6 || migratedV7 || migratedV8 || migratedAU || pruned) {
         saveSettingsDebounced();
     }
 }
 
-// 전역 범위: 켜기/끄기는 모든 채팅방 공통, 내용과 "어떤 프리셋을 열어뒀는지"는 채팅방별.
-// 고른 적 없는 채팅방은 고정(📌) 프리셋의 내용으로 열린다.
+// 규칙/전역: 프리셋 목록은 공유하지만 활성화 상태와 편집 대상은 채팅방별로 저장한다.
+// 처음 여는 채팅방은 별표 프리셋을 기본으로 사용한다.
 function getGlobalScoped() {
     const settings = getSettings();
     const shared = sanitizeScopeState(settings.global);
@@ -846,6 +896,7 @@ function getGlobalScoped() {
     }
 
     const entry = settings.globals?.[key];
+    const pinned = getPinnedPreset("global");
     let direction;
     let presetId = "";
 
@@ -853,8 +904,6 @@ function getGlobalScoped() {
         direction = sanitizePlaceholderValue(entry.direction);
         presetId = typeof entry.presetId === "string" ? entry.presetId : "";
     } else {
-        const pinned = getPinnedPreset("global");
-
         if (pinned) {
             direction = sanitizePlaceholderValue({ entries: [pinned.content], activeIndex: 0 });
             presetId = pinned.id;
@@ -864,8 +913,9 @@ function getGlobalScoped() {
     }
 
     return sanitizeScopeState({
-        direction: { ...direction, enabled: shared.direction.enabled },
+        direction: { ...direction, enabled: Boolean(entry?.direction?.enabled ?? (pinned && presetId === pinned.id ? true : shared.direction.enabled)) },
         presetId,
+        activePresetIds: Array.isArray(entry?.activePresetIds) ? entry.activePresetIds : (pinned ? [pinned.id] : []),
     });
 }
 
@@ -882,27 +932,23 @@ function ensureGlobalScoped() {
 
     if (!settings.globals[key]) {
         const current = getGlobalScoped();
-        settings.globals[key] = sanitizeScopeState({ direction: current.direction, presetId: current.presetId });
+        settings.globals[key] = sanitizeScopeState({ direction: current.direction, presetId: current.presetId, activePresetIds: current.activePresetIds });
     }
 
     const entry = sanitizeScopeState(settings.globals[key]);
     settings.globals[key] = entry;
 
     return {
-        get direction() {
-            return { ...entry.direction, enabled: settings.global.direction.enabled };
-        },
-        set direction(value) {
-            const next = sanitizePlaceholderValue(value);
-            settings.global.direction = sanitizePlaceholderValue({ ...settings.global.direction, enabled: next.enabled });
-            entry.direction = { ...next };
-        },
+        get direction() { return entry.direction; },
+        set direction(value) { entry.direction = sanitizePlaceholderValue(value); },
         get presetId() {
             return entry.presetId;
         },
         set presetId(value) {
             entry.presetId = typeof value === "string" ? value : "";
         },
+        get activePresetIds() { return entry.activePresetIds; },
+        set activePresetIds(value) { entry.activePresetIds = Array.isArray(value) ? value : []; },
     };
 }
 
@@ -911,6 +957,22 @@ function ensureScopedSettings(scope) {
 
     if (scope === "global") {
         return ensureGlobalScoped();
+    }
+
+    if (scope === "au") {
+        const key = getCurrentChatKey();
+        if (!key) return null;
+        if (!settings.aus[key]) {
+            const pinned = getPinnedPreset("au");
+            settings.aus[key] = sanitizeScopeState({
+                direction: { enabled: Boolean(pinned), entries: [pinned?.content || ""], activeIndex: 0 },
+                presetId: pinned?.id || "",
+                activePresetIds: getPinnedPresets("au").map((preset) => preset.id),
+            });
+        } else {
+            settings.aus[key] = sanitizeScopeState(settings.aus[key]);
+        }
+        return settings.aus[key];
     }
 
     if (scope === "char") {
@@ -942,6 +1004,10 @@ function getScopedSettings(scope) {
         return getGlobalScoped();
     }
 
+    if (scope === "au") {
+        return ensureScopedSettings("au");
+    }
+
     if (scope === "char") {
         const key = getCurrentCharKey();
         if (!key) return null;
@@ -969,6 +1035,16 @@ function isValidEnabledContent(value) {
     return Boolean(value?.enabled && typeof value?.content === "string" && value.content.trim() !== "");
 }
 
+function getActivePresetIds(scope) {
+    const scoped = getScopedSettings(scope);
+    const list = getPresetList("direction", scope);
+    if (!scoped) return [];
+    const saved = Array.isArray(scoped.activePresetIds) ? scoped.activePresetIds.filter((id) => list.some((p) => p.id === id)) : [];
+    if (Array.isArray(scoped.activePresetIds)) return saved;
+    const pinned = getPinnedPresets(scope);
+    return pinned.map((preset) => preset.id);
+}
+
 function resolveCombinedContent(placeholderKey) {
     const parts = [];
     const activeScopes = [];
@@ -976,7 +1052,17 @@ function resolveCombinedContent(placeholderKey) {
     SCOPE_ORDER.forEach((scope) => {
         const value = getScopedPlaceholder(scope, placeholderKey);
 
-        if (isValidEnabledContent(value)) {
+        if ((scope === "global" || scope === "au") && value?.enabled) {
+            const ids = getActivePresetIds(scope);
+            const active = getPresetList(placeholderKey, scope).filter((p) => ids.includes(p.id) && p.content.trim());
+            if (active.length) {
+                parts.push(`${SCOPE_LABELS[scope]}\n${active.map((p) => p.content.trim()).join("\n\n")}`);
+                activeScopes.push(scope);
+            } else if (getPresetList(placeholderKey, scope).length === 0 && isValidEnabledContent(value)) {
+                parts.push(`${SCOPE_LABELS[scope]}\n${value.content.trim()}`);
+                activeScopes.push(scope);
+            }
+        } else if (isValidEnabledContent(value)) {
             parts.push(`${SCOPE_LABELS[scope]}\n${value.content.trim()}`);
             activeScopes.push(scope);
         }
@@ -1141,10 +1227,14 @@ function getPresetList(placeholderKey, scope) {
 }
 
 // 📌 고정된 프리셋 (지금은 전역 범위에서만 사용)
+function getPinnedPresets(scope) {
+    const raw = getSettings().presetPins?.[scope];
+    const ids = scope === "au" ? (Array.isArray(raw) ? raw : (typeof raw === "string" && raw ? [raw] : [])) : [typeof raw === "string" ? raw : ""];
+    return ids.map((id) => getPresetList("direction", scope).find((preset) => preset.id === id)).filter(Boolean);
+}
+
 function getPinnedPreset(scope) {
-    const pinId = getSettings().presetPins?.[scope] || "";
-    if (!pinId) return null;
-    return getPresetList("direction", scope).find((preset) => preset.id === pinId) || null;
+    return getPinnedPresets(scope)[0] || null;
 }
 
 // 이 채팅방에서 지금 열어둔 프리셋 id. 저장된 선택 → 고정 프리셋 → (예전 데이터) 내용이 같은 프리셋 순으로 찾는다.
@@ -1179,7 +1269,7 @@ function setSelectedPresetId(scope, presetId) {
 // 프리셋 내용을 저장(덮어쓰기)하면, 그 프리셋을 열어두고 아직 안 고친 채팅방도 새 내용을 따라가게 한다.
 function propagatePresetContent(scope, presetId, oldContent, newContent) {
     const settings = getSettings();
-    const store = scope === "global" ? settings.globals : settings.chars;
+    const store = scope === "global" ? settings.globals : scope === "au" ? settings.aus : settings.chars;
 
     Object.values(store || {}).forEach((entry) => {
         if (!entry || entry.presetId !== presetId) return;
@@ -1195,7 +1285,7 @@ function propagatePresetContent(scope, presetId, oldContent, newContent) {
 
 function clearPresetReferences(scope, presetId) {
     const settings = getSettings();
-    const store = scope === "global" ? settings.globals : settings.chars;
+    const store = scope === "global" ? settings.globals : scope === "au" ? settings.aus : settings.chars;
 
     Object.values(store || {}).forEach((entry) => {
         if (entry && entry.presetId === presetId) entry.presetId = "";
@@ -1230,23 +1320,26 @@ let presetReorderMode = false;
 function buildPresetListHtml() {
     const placeholder = getPopupCurrentPlaceholder();
     const presets = getPresetList(placeholder.key, currentScope);
-    const pinnedId = getPinnedPreset(currentScope)?.id || "";
+    const pinnedIds = new Set(getPinnedPresets(currentScope).map((preset) => preset.id));
     const selectedId = getSelectedPresetId(currentScope);
-    const canPin = currentScope === "global";
+    const canPin = currentScope === "global" || currentScope === "au";
 
     const rows = presets.map((preset, index) => {
         const isSelected = preset.id === selectedId;
-        const isPinned = preset.id === pinnedId;
+        const isPinned = pinnedIds.has(preset.id);
         const move = presetReorderMode
-            ? `<span class="dm-compact--move${index === 0 ? " dm-compact--move-off" : ""}" data-act="up">▲</span><span class="dm-compact--move${index === presets.length - 1 ? " dm-compact--move-off" : ""}" data-act="down">▼</span>`
+            ? `<span class="dm-compact--move${index === 0 ? " dm-compact--move-off" : ""}" data-act="up" title="위로">▲</span><span class="dm-compact--move${index === presets.length - 1 ? " dm-compact--move-off" : ""}" data-act="down" title="아래로">▼</span><span class="dm-compact--move dm-compact--move-delete" data-act="delete" title="프리셋 삭제">🗑</span>`
             : "";
         const star = canPin
-            ? `<span class="dm-compact--star${isPinned ? " dm-compact--star-on" : ""}" data-act="pin" title="기본으로 지정">${isPinned ? "★" : "☆"}</span>`
+            ? `<span class="dm-compact--star${isPinned ? " dm-compact--star-on" : ""}" data-act="pin" title="새 채팅방 기본 활성화">${isPinned ? "★" : "☆"}</span>`
             : "";
+        const activeIds = getActivePresetIds(currentScope);
+        const isOn = activeIds.includes(preset.id);
+        const toggle = (currentScope === "global" || currentScope === "au")
+            ? `<span class="dm-compact--dot${isOn ? " dm-compact--dot-on" : ""}" data-act="toggle" title="프롬프트 포함 전환"></span>` : `<span class="dm-compact--dot${isSelected ? " dm-compact--dot-on" : ""}"></span>`;
 
         return `<div class="dm-compact--preset-item${isSelected ? " dm-compact--preset-item-sel" : ""}" data-id="${preset.id}">`
-            + `<span class="dm-compact--preset-item-name">${escapeHtml(preset.name)}</span>${move}${star}`
-            + `<span class="dm-compact--dot${isSelected ? " dm-compact--dot-on" : ""}"></span></div>`;
+            + `<span class="dm-compact--preset-item-name">${escapeHtml(preset.name)}</span>${move}${star}${toggle}</div>`;
     }).join("");
 
     const head = `<div class="dm-compact--preset-list-head"><span>프리셋 ${presets.length}개</span>`
@@ -1280,8 +1373,8 @@ function renderPresetSelect() {
     const placeholder = getPopupCurrentPlaceholder();
     const selectedId = getSelectedPresetId(currentScope);
     const preset = selectedId ? getPresetList(placeholder.key, currentScope).find((item) => item.id === selectedId) : null;
-    const pinnedId = getPinnedPreset(currentScope)?.id || "";
-    const star = preset && preset.id === pinnedId ? '<span class="dm-compact--star dm-compact--star-on">★</span>' : "";
+    const pinnedIds = new Set(getPinnedPresets(currentScope).map((preset) => preset.id));
+    const star = preset && pinnedIds.has(preset.id) ? '<span class="dm-compact--star dm-compact--star-on">★</span>' : "";
 
     compactUIPopup.find(".dm-compact--preset-current-name").html(preset ? `${star}${escapeHtml(preset.name)}` : "✨️ 어떤 지시를 내릴까?");
 
@@ -1478,7 +1571,8 @@ function showCompactUIPopup() {
             </div>
 
             <div class="dm-compact--scope-row">
-                <button class="dm-compact--scope-btn" data-tab="global" type="button"><span class="dm-compact--scope-emoji">🌐</span>전역</button>
+                <button class="dm-compact--scope-btn" data-tab="global" type="button"><span class="dm-compact--scope-emoji">📜</span>규칙</button>
+                <button class="dm-compact--scope-btn" data-tab="au" type="button"><span class="dm-compact--scope-emoji">🌐</span>AU</button>
                 <button class="dm-compact--scope-btn" data-tab="char" type="button"><span class="dm-compact--scope-emoji">🎭</span>캐릭터</button>
                 <button class="dm-compact--scope-btn" data-tab="plot" type="button"><span class="dm-compact--scope-emoji">📖</span>줄거리</button>
                 <button class="dm-compact--scope-btn" data-tab="chat" type="button"><span class="dm-compact--scope-emoji">🗨️</span>채팅</button>
@@ -1769,11 +1863,41 @@ function setupCompactUIEventListeners() {
         const id = itemEl.length ? String(itemEl.data("id")) : "";
         const index = list.findIndex((item) => item.id === id);
 
-        if (act === "reorder") {
+        if (act === "toggle" && index >= 0 && (currentScope === "global" || currentScope === "au")) {
+            const scoped = ensureScopedSettings(currentScope);
+            const active = new Set(getActivePresetIds(currentScope));
+            if (active.has(id)) active.delete(id); else active.add(id);
+            scoped.activePresetIds = list.filter((p) => active.has(p.id)).map((p) => p.id);
+            saveSettingsDebounced();
+            applyAllPlaceholders();
+            renderPresetList();
+            updateAppliedIndicator();
+        } else if (act === "reorder") {
             presetReorderMode = !presetReorderMode;
             renderPresetList();
         } else if (act === "pin" && index >= 0) {
-            settings.presetPins[currentScope] = id;
+            if (currentScope === "au") {
+                const pins = new Set(getPinnedPresets("au").map((preset) => preset.id));
+                if (pins.has(id)) pins.delete(id); else pins.add(id);
+                settings.presetPins.au = list.filter((preset) => pins.has(preset.id)).map((preset) => preset.id);
+            } else {
+                settings.presetPins[currentScope] = id;
+            }
+            const scoped = ensureScopedSettings(currentScope);
+            if (scoped && (currentScope === "global" || currentScope === "au") && !Array.isArray(scoped.activePresetIds)) scoped.activePresetIds = getPinnedPresets(currentScope).map((preset) => preset.id);
+            saveSettingsDebounced();
+            renderPresetSelect();
+        } else if (act === "delete" && index >= 0) {
+            const target = list[index];
+            const isPinned = getPinnedPresets(currentScope).some((preset) => preset.id === target.id);
+            if (isPinned) {
+                toastr.warning("★가 지정된 프리셋은 별표를 해제한 뒤 삭제해 주세요.");
+                return;
+            }
+            const confirmed = await showNativeConfirm("프리셋 삭제", `"${target.name}" 프리셋을 삭제하시겠습니까? 이 프리셋을 사용하던 채팅방의 입력 내용은 그대로 남아요.`);
+            if (!confirmed) return;
+            list.splice(index, 1);
+            clearPresetReferences(currentScope, target.id);
             saveSettingsDebounced();
             renderPresetSelect();
         } else if ((act === "up" || act === "down") && index >= 0) {
@@ -1867,8 +1991,12 @@ function setupCompactUIEventListeners() {
 
         const target = list[index];
 
-        if (settings.presetPins[currentScope] === target.id) {
+        if (currentScope === "global" && settings.presetPins.global === target.id) {
             toastr.warning("기본(★)으로 지정된 프리셋은 삭제할 수 없어요. 다른 프리셋에 ★를 켠 뒤 삭제해 주세요.");
+            return;
+        }
+        if (currentScope === "au" && getPinnedPresets("au").some((preset) => preset.id === target.id)) {
+            toastr.warning("★가 지정된 AU 프리셋은 먼저 별표를 해제한 뒤 삭제해 주세요.");
             return;
         }
 
@@ -1995,6 +2123,20 @@ function updateExtensionMenuUI() {
     refreshPromptEditorState();
 }
 
+async function clearCurrentAUScopeData() {
+    const key = getCurrentChatKey();
+    if (!key) {
+        toastr.warning("현재 채팅을 찾을 수 없습니다.");
+        return;
+    }
+    const confirmed = await showNativeConfirm("AU 데이터 초기화", "이 채팅방의 AU 활성화 상태와 편집 대상을 기본 별표 프리셋 상태로 되돌릴까요? 프리셋 자체는 삭제되지 않습니다.");
+    if (!confirmed) return;
+    delete getSettings().aus[key];
+    applyAllPlaceholders();
+    saveSettingsDebounced();
+    refreshPopupIfOpened();
+}
+
 async function clearCurrentCharScopeData() {
     const key = getCurrentCharKey();
 
@@ -2034,6 +2176,7 @@ async function clearAllScopeData() {
 
     settings.global = sanitizeScopeState({ direction: { enabled, entries: [""], activeIndex: 0 } });
     settings.globals = {};
+    settings.aus = {};
     settings.chars = {};
     settings.chats = {};
     Object.values(PLOT_STORE).forEach((storeKey) => {
@@ -2207,6 +2350,7 @@ function setupExtensionMenuEventHandlers() {
     $("#direction_clear_global").on("click", clearCurrentGlobalScopeData);
     $("#direction_clear_all").on("click", clearAllScopeData);
     $("#direction_clear_char").on("click", clearCurrentCharScopeData);
+    $("#direction_clear_au").on("click", clearCurrentAUScopeData);
     $("#direction_clear_chat").on("click", clearCurrentChatScopeData);
     $("#direction_clear_plot").on("click", clearCurrentPlotScopeData);
 }
