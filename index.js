@@ -9,24 +9,21 @@ const LOG_PREFIX = "[🪄전개지시M]";
 const extensionFolderUrl = new URL(".", import.meta.url).pathname;
 
 const DEFAULT_DIRECTION_PROMPT_CHAT = `<direction>
-- Resume the story based on the director's instructions below.
-- The director only provides drafts; refine them into natural prose instead of directly quoting the sentences.
-- Creatively construct and fill in any parts lacking persuasive causality so that the narrative suggested by the director unfolds smoothly.
+- This is the director's note for the next reply. Follow it first.
+- If it directs the story, continue the story from it. If it is a question, an OOC request, or asks for a specific output (a letter, a poll, a visual page, a language, etc.), do exactly that instead of forcing story narration, and apply any stated conditions to whatever you write.
+- Story drafts: keep dialogue's intent, tone, and key wording, and use it as is if it already reads well; smooth it only when clearly rough, changing as little as possible. Rewrite non-dialogue draft text into natural prose and fill in any missing causality.
 
 [Direction(If blank, develop the story as you see fit): {{direction}}]
 </direction>`;
 
 const DEFAULT_DIRECTION_PROMPT_GLOBAL = `<format_rules>
-- These are standing formatting/style rules for every reply in this roleplay. Follow them exactly, without exception, for as long as they are enabled below.
-- Do not quote or restate these rules in your reply; just apply them silently.
+- These are standing rules for every reply in this roleplay. Follow them exactly, without exception.
 
 {{direction}}
 </format_rules>`;
 
 const DEFAULT_DIRECTION_PROMPT_CHAR = `<character_notes>
-- The following are background notes about the characters' current state and the world (situation, emotions, personality, setting).
-- Keep them in mind as quiet background knowledge while writing. They do not need to show up in every reply.
-- Never state, quote, or explain these notes directly. Let them surface only indirectly, through tone, behavior, and small details, and only when it fits the scene.
+- Background knowledge only. Never state or quote it; let it surface indirectly, and only when it fits the scene.
 
 {{direction}}
 </character_notes>`;
@@ -51,11 +48,9 @@ const DEFAULT_DIRECTION_PROMPT_PLOT_NEXT = `<next_beats>
 </next_beats>`;
 
 const DEFAULT_DIRECTION_PROMPT_AU = `<world_setting>
-- The following describes the alternate-universe (AU) rules and worldbuilding of this roleplay (special dynamics, hierarchies, biology, social structure, and so on). Treat them as established facts of this world for as long as they are enabled.
-- Several AU settings may be given at once. Treat them as one combined world and keep them consistent with each other.
-- Apply them consistently to how characters think, behave, and relate to one another, and to how the world responds to them.
-- Never quote, list, or explain these rules in your reply. Let them show only through natural narration, behavior, and small details, as if the world has always worked this way.
-- If a rule seems to conflict with a character's established personality, keep the character true to themselves and adapt how the rule is expressed.
+- The following are established facts of this world. Apply them consistently to how characters think, behave, and relate to one another, and to how the world responds.
+- Let them show only through narration and behavior; never quote or explain them.
+- If a rule conflicts with a character's personality, keep the character true to themselves and adapt how the rule shows.
 
 {{direction}}
 </world_setting>`;
@@ -67,6 +62,39 @@ const LEGACY_CHAR_PROMPT_V5 = `<character_notes>
 
 {{direction}}
 </character_notes>`;
+
+// v9까지의 기본 프롬프트 (v10 마이그레이션에서 "기본값 그대로인지" 비교용)
+const LEGACY_PROMPTS_V9 = {
+    global: `<format_rules>
+- These are standing formatting/style rules for every reply in this roleplay. Follow them exactly, without exception, for as long as they are enabled below.
+- Do not quote or restate these rules in your reply; just apply them silently.
+
+{{direction}}
+</format_rules>`,
+    au: `<world_setting>
+- The following describes the alternate-universe (AU) rules and worldbuilding of this roleplay (special dynamics, hierarchies, biology, social structure, and so on). Treat them as established facts of this world for as long as they are enabled.
+- Several AU settings may be given at once. Treat them as one combined world and keep them consistent with each other.
+- Apply them consistently to how characters think, behave, and relate to one another, and to how the world responds to them.
+- Never quote, list, or explain these rules in your reply. Let them show only through natural narration, behavior, and small details, as if the world has always worked this way.
+- If a rule seems to conflict with a character's established personality, keep the character true to themselves and adapt how the rule is expressed.
+
+{{direction}}
+</world_setting>`,
+    char: `<character_notes>
+- The following are background notes about the characters' current state and the world (situation, emotions, personality, setting).
+- Keep them in mind as quiet background knowledge while writing. They do not need to show up in every reply.
+- Never state, quote, or explain these notes directly. Let them surface only indirectly, through tone, behavior, and small details, and only when it fits the scene.
+
+{{direction}}
+</character_notes>`,
+    chat: `<direction>
+- Resume the story based on the director's instructions below.
+- The director only provides drafts; refine them into natural prose instead of directly quoting the sentences.
+- Creatively construct and fill in any parts lacking persuasive causality so that the narrative suggested by the director unfolds smoothly.
+
+[Direction(If blank, develop the story as you see fit): {{direction}}]
+</direction>`,
+};
 
 // v4 이전 단일 프롬프트 시절의 기본값 (v5 마이그레이션 비교용)
 const DEFAULT_DIRECTION_PROMPT = DEFAULT_DIRECTION_PROMPT_CHAT;
@@ -196,6 +224,7 @@ const defaultSettings = {
     _migratedV7: false,
     _migratedV8: false,
     _migratedV9: false,
+    _migratedV10: false,
 };
 
 let currentScope = "chat";
@@ -657,6 +686,7 @@ function normalizeSettings() {
     settings._migratedV7 = Boolean(settings._migratedV7);
     settings._migratedV8 = Boolean(settings._migratedV8);
     settings._migratedV9 = Boolean(settings._migratedV9);
+    settings._migratedV10 = Boolean(settings._migratedV10);
 
     Object.keys(settings.aus).forEach((key) => {
         settings.aus[key] = sanitizeScopeState(settings.aus[key]);
@@ -897,6 +927,30 @@ function migrateV9AuScopeIfNeeded() {
     return true;
 }
 
+// v10: 기본 프롬프트를 짧게 줄였다 (규칙·AU·캐릭터·채팅).
+// 예전 기본값 그대로 쓰던 프롬프트만 새 기본값으로 바꾸고, 직접 고친 프롬프트는 건드리지 않는다.
+function migrateV10ShortPromptsIfNeeded() {
+    const settings = getSettings();
+
+    if (settings._migratedV10) {
+        return false;
+    }
+
+    const prompts = settings.directionPrompt;
+
+    if (prompts && typeof prompts === "object") {
+        Object.keys(LEGACY_PROMPTS_V9).forEach((scope) => {
+            if (prompts[scope] === LEGACY_PROMPTS_V9[scope]) {
+                prompts[scope] = DEFAULT_DIRECTION_PROMPTS[scope];
+            }
+        });
+    }
+
+    settings._migratedV10 = true;
+    console.log(`${LOG_PREFIX} 기본 프롬프트를 짧은 버전으로 교체했습니다. (직접 고친 프롬프트는 그대로)`);
+    return true;
+}
+
 async function loadSettings() {
     const settings = getSettings();
 
@@ -914,8 +968,9 @@ async function loadSettings() {
     const migratedV7 = migrateV7DefaultPresetIfNeeded();
     const migratedV8 = migrateV8DepthDefaultsIfNeeded();
     const migratedV9 = migrateV9AuScopeIfNeeded();
+    const migratedV10 = migrateV10ShortPromptsIfNeeded();
 
-    if (migrated || migratedV3 || migratedV4 || migratedV5 || migratedV6 || migratedV7 || migratedV8 || migratedV9 || pruned) {
+    if (migrated || migratedV3 || migratedV4 || migratedV5 || migratedV6 || migratedV7 || migratedV8 || migratedV9 || migratedV10 || pruned) {
         saveSettingsDebounced();
     }
 }
@@ -1358,19 +1413,47 @@ function propagatePresetContent(scope, presetId, oldContent, newContent) {
     });
 }
 
-// 프리셋을 지우면: 열어둔 곳·켜 둔 곳·★에서 모두 빼 준다
-function clearPresetReferences(scope, presetId) {
+// 프리셋을 지우면: 이 프리셋을 열어두거나 켜 둔 모든 채팅방에서 내용까지 함께 지운다.
+// - 열어둔 채팅방은 입력칸 내용을 ★ 프리셋(없으면 빈 칸)으로 되돌린다 → 삭제된 내용이 프롬프트에 남지 않는다
+// - 켜 둔 곳·★에서도 뺀다
+function purgeDeletedPreset(scope, presetId, deletedContent) {
     const settings = getSettings();
-    const store = settings[presetStoreOf(scope)];
+    const storeKey = presetStoreOf(scope);
+    const store = settings[storeKey];
+    const sharedKey = SHARED_SCOPES[scope]?.shared;
+    const hasContent = typeof deletedContent === "string" && deletedContent.trim() !== "";
+
+    // ★에서 먼저 빼야 "되돌아갈 프리셋"에 지운 프리셋이 안 끼어든다
+    if (settings.presetPins) {
+        settings.presetPins[scope] = getPinnedIds(scope).filter((id) => id !== presetId);
+    }
+
+    const fallback = getFirstPinnedPreset(scope);
+    const fallbackId = fallback ? fallback.id : "";
+    const fallbackContent = fallback ? fallback.content : "";
+    const freshDirection = () => sanitizePlaceholderValue({ entries: [fallbackContent], activeIndex: 0 });
 
     Object.values(store || {}).forEach((entry) => {
         if (!entry) return;
-        if (entry.presetId === presetId) entry.presetId = "";
+
+        const content = typeof entry.direction?.content === "string" ? entry.direction.content : "";
+        // 예전 데이터: 프리셋 id 없이 내용만 같은 경우도 이 프리셋을 열어둔 것으로 본다
+        const wasOpen = entry.presetId === presetId || (!entry.presetId && hasContent && content === deletedContent);
+
+        if (wasOpen) {
+            entry.presetId = fallbackId;
+            entry.direction = freshDirection();
+        }
+
         if (Array.isArray(entry.onIds)) entry.onIds = entry.onIds.filter((id) => id !== presetId);
     });
 
-    if (settings.presetPins) {
-        settings.presetPins[scope] = getPinnedIds(scope).filter((id) => id !== presetId);
+    // 채팅방이 없을 때 쓰는 공용 칸
+    const shared = sharedKey ? settings[sharedKey] : null;
+    const sharedContent = typeof shared?.direction?.content === "string" ? shared.direction.content : "";
+
+    if (shared && hasContent && sharedContent === deletedContent) {
+        shared.direction = { ...freshDirection(), enabled: Boolean(shared.direction.enabled) };
     }
 }
 
@@ -2053,15 +2136,29 @@ function setupCompactUIEventListeners() {
         if (index < 0) return;
 
         const target = list[index];
-        const confirmed = await showNativeConfirm("프리셋 삭제", `"${target.name}" 프리셋을 삭제하시겠습니까? (이 프리셋을 쓰던 채팅방의 내용은 그대로 남아요)`);
+        const confirmed = await showNativeConfirm("프리셋 삭제", `"${target.name}" 프리셋을 삭제하시겠습니까? (이 프리셋을 쓰던 모든 채팅방에서도 이 프리셋의 내용이 함께 사라져요)`);
 
         if (!confirmed || !compactUIPopup || scope !== currentScope) return;
 
         const at = list.findIndex((item) => item.id === presetId);
         if (at < 0) return;
 
+        const deletedContent = list[at].content;
+        const textarea = getScopeTextarea(scope);
+        const before = String(textarea.val() || "");
+
         list.splice(at, 1);
-        clearPresetReferences(scope, presetId);
+        purgeDeletedPreset(scope, presetId, deletedContent);
+
+        // 지금 열어둔 채팅방의 입력칸도 되돌아간 내용으로 바꾼다 (삭제된 내용이 화면에 남지 않게)
+        const state = getCurrentScopeState(placeholder.key);
+
+        if (state.content !== before) {
+            textarea.val(state.content);
+            sessionSnapshot = null;
+            beginHistorySession(state);
+        }
+
         commitDirectionContentNow(placeholder);
         saveSettingsDebounced();
         renderPresetSelect();
