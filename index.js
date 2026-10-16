@@ -1,11 +1,9 @@
-// 🪄전개지시M 확장 - direction 플레이스홀더 관리 (컴팩트 UI 전용)
 import { extension_settings, getContext } from "../../../extensions.js";
 import { saveSettingsDebounced, eventSource, event_types, characters, this_chid } from "../../../../script.js";
 import { Popup } from "../../../popup.js";
 
 const extensionName = "Direction-Manager-DB";
 const LOG_PREFIX = "[🪄전개지시M]";
-// 실제로 설치된 폴더 경로. 폴더명이 달라도(예: Ptest) settings.html을 이 폴더에서 읽기 위함
 const extensionFolderUrl = new URL(".", import.meta.url).pathname;
 
 const DEFAULT_DIRECTION_PROMPT_CHAT = `<direction>
@@ -56,7 +54,6 @@ const DEFAULT_DIRECTION_PROMPT_AU = `<world_setting>
 {{direction}}
 </world_setting>`;
 
-// v5까지의 캐릭터 기본 프롬프트 (v6 마이그레이션에서 "기본값 그대로인지" 비교용)
 const LEGACY_CHAR_PROMPT_V5 = `<character_notes>
 - The following are ongoing notes about the current situation, emotions, personality, or world details that apply to this conversation for the next several turns.
 - Treat them as established fact and weave them naturally into the story; do not quote them directly or announce that you received notes.
@@ -64,7 +61,6 @@ const LEGACY_CHAR_PROMPT_V5 = `<character_notes>
 {{direction}}
 </character_notes>`;
 
-// v9까지의 기본 프롬프트 (v10 마이그레이션에서 "기본값 그대로인지" 비교용)
 const LEGACY_PROMPTS_V9 = {
     global: `<format_rules>
 - These are standing formatting/style rules for every reply in this roleplay. Follow them exactly, without exception, for as long as they are enabled below.
@@ -97,7 +93,6 @@ const LEGACY_PROMPTS_V9 = {
 </direction>`,
 };
 
-// v4 이전 단일 프롬프트 시절의 기본값 (v5 마이그레이션 비교용)
 const DEFAULT_DIRECTION_PROMPT = DEFAULT_DIRECTION_PROMPT_CHAT;
 
 const DEFAULT_DIRECTION_PROMPTS = {
@@ -127,11 +122,8 @@ const SCOPE_LABELS = {
     chat: "[Director's Note]",
 };
 
-// 저장·프롬프트 주입 단위(총 6개). 화면의 탭은 아래 TAB_*로 묶는다.
-// (global = 화면의 "규칙" 탭, au = "AU" 탭)
 const SCOPE_ORDER = ["global", "au", "char", "plotMain", "plotNext", "chat"];
 
-// 화면 탭: 줄거리 탭 하나 안에 큰 줄거리(plotMain) / 작은 줄거리(plotNext) 두 칸이 들어 있다.
 const TAB_ORDER = ["global", "au", "char", "plot", "chat"];
 const TAB_SCOPES = {
     global: ["global"],
@@ -143,10 +135,8 @@ const TAB_SCOPES = {
 
 // 숫자가 작을수록 최신 메시지에 가깝다 (0 = 맨 끝)
 const DEFAULT_PROMPT_DEPTHS = { global: 0, au: 2, char: 2, plotMain: 4, plotNext: 3, chat: 1 };
-// v1.6 이전 기본값 (이 값 그대로 쓰던 사람만 새 기본값으로 옮겨 준다)
 const LEGACY_PROMPT_DEPTHS_V7 = { global: 2, char: 5, plotMain: 3, plotNext: 1, chat: 0 };
 
-// 프리셋을 쓰는 범위(여러 개를 동시에 켤 수 있다). 켜기/끄기는 모든 채팅방 공통, 내용과 켜 둔 프리셋은 채팅방별.
 const SHARED_SCOPES = {
     global: { shared: "global", store: "globals" },
     au: { shared: "au", store: "aus" },
@@ -156,7 +146,6 @@ function isPresetScope(scope) {
     return Boolean(SHARED_SCOPES[scope]);
 }
 
-// 줄거리 두 칸은 채팅(대화) 단위로 저장된다. settings 안의 보관함 이름.
 const PLOT_STORE = { plotMain: "plotMains", plotNext: "plotNexts" };
 
 const SCOPE_PLACEHOLDERS = {
@@ -176,20 +165,16 @@ function getTabScopes(scope) {
     return TAB_SCOPES[scopeToTab(scope)];
 }
 
-// 프리셋은 규칙·AU 탭에만 있다. 나머지 탭은 프리셋 줄을 빼고 그만큼 입력칸을 쓴다
 function scopeHidesPresets(scope) {
     return !isPresetScope(scope);
 }
 
-// 프리셋 줄이 없고 입력칸이 하나인 탭(캐릭터·채팅): 공용 높이 + 프리셋 줄 높이로 팝업 크기를 맞춘다
 function usesFreeSize(scope) {
     return scope === "chat" || scope === "char";
 }
 
-// 기록에 남는 항목의 최대 개수(현재 보고 있는 칸 포함). 화면에는 N/5로 표시된다.
 const HISTORY_TOTAL_MAX = 5;
 const HISTORY_MIN_CHARS = 1;
-// 구버전 데이터({content, history} 형태) 호환용
 const HISTORY_MAX = HISTORY_TOTAL_MAX - 1;
 
 function defaultScopeState() {
@@ -207,14 +192,12 @@ const defaultSettings = {
     plotMains: {},
     plotNexts: {},
     globals: {},
-    // ★: 아직 한 번도 건드리지 않은 채팅방에서 처음부터 켜져 있는 프리셋들 (여러 개 가능)
     presetPins: { global: [], au: [] },
     presets: {
         direction: { global: [], au: [], char: [], plotMain: [], plotNext: [], chat: [] },
     },
     extensionEnabled: true,
     directionPrompt: { ...DEFAULT_DIRECTION_PROMPTS },
-    // 0: Chat History 끝에 삽입, >0: 끝에서 N번째 위치에 삽입
     promptDepth: { ...DEFAULT_PROMPT_DEPTHS },
     lastScope: "chat",
     _migratedV2: false,
@@ -226,6 +209,7 @@ const defaultSettings = {
     _migratedV8: false,
     _migratedV9: false,
     _migratedV10: false,
+    _migratedV11: false,
 };
 
 let currentScope = "chat";
@@ -270,12 +254,9 @@ function defaultTextareaHeightPx() {
     return window.innerWidth <= 480 ? "130px" : "160px";
 }
 
-// 채팅 탭은 직접 리사이즈한 적이 없으면 (공용 높이 + 프리셋 줄 높이)로 맞춰 팝업 크기를 동일하게 유지
-// 줄거리 탭: 라벨 2줄(18px×2) + 칸 사이 간격(3px×3)을 뺀 만큼을 큰 줄거리 4 : 작은 줄거리 6으로 나눈다
 const PLOT_CHROME_PX = 45;
 const PLOT_MAIN_HEIGHT_RATIO = 0.4;
 
-// 채팅·줄거리 탭은 직접 리사이즈한 적이 없으면 (공용 높이 + 프리셋 줄 높이)로 맞춰 팝업 크기를 동일하게 유지
 function restoreTextareaHeightForCurrentScope() {
     if (!compactUIPopup) return;
 
@@ -304,7 +285,6 @@ function restoreTextareaHeightForCurrentScope() {
     textarea[0].style.height = compactUITextareaHeights[group] || defaultTextareaHeightPx();
 }
 
-// 팝업을 열 때 한 번만 계산. 키보드 상태와 무관하게 screen.availHeight 기준.
 function applyTextareaHeightCap() {
     if (!compactUIPopup) return;
 
@@ -327,9 +307,6 @@ function applyTextareaHeightCap() {
 
     textarea.css("max-height", `${maxTextareaHeight}px`);
 }
-// 타이핑 도중(팝업이 최신 칸을 보고 있을 때) "이번 세션을 시작하기 전 내용"을 기억해둔다.
-// 팝업을 닫거나 범위를 바꿀 때, 이 스냅샷을 현재 칸 "바로 앞"에 끼워 넣어 새 기록으로 확정한다.
-// entries의 순서 자체는 절대 바뀌지 않는다 — 탐색은 activeIndex만 움직인다.
 let sessionSnapshot = null;
 
 function isMeaningfulHistoryText(text) {
@@ -343,13 +320,11 @@ function capEntries(entries) {
     return entries;
 }
 
-// 팝업을 열거나(스코프 전환 포함) ←/→로 위치를 옮긴 직후 호출: 지금 위치를 새 세션의 기준점으로 삼는다.
 function beginHistorySession(scopedValue) {
     const lastIndex = scopedValue.entries.length - 1;
     sessionSnapshot = scopedValue.activeIndex === lastIndex ? scopedValue.entries[lastIndex] : null;
 }
 
-// 팝업 닫기 / 범위 전환 직전: 세션 시작 시점 내용이 지금과 다르면 새 기록 한 칸으로 확정한다.
 function flushHistorySession() {
     if (sessionSnapshot === null) return;
 
@@ -380,8 +355,6 @@ function flushHistorySession() {
     sessionSnapshot = null;
 }
 
-// ←/→: 목록 순서는 그대로 두고 보고 있는 위치(activeIndex)만 옮긴다. 이 위치는 저장되어
-// 팝업을 닫았다 다시 열어도 유지된다.
 function navigateHistory(direction) {
     if (!compactUIPopup) return;
 
@@ -406,11 +379,9 @@ function navigateHistory(direction) {
     updateAppliedIndicator();
     refreshPresetControls();
 }
-// ST 네이티브 Popup이 떠 있는 동안 true (바깥 클릭으로 컴팩트 UI가 닫히지 않게 함)
 let isNativePopupOpen = false;
 let compactUIApplyDebounceTimer = null;
 let promptEditorScope = "global";
-// 확장 설정 패널에서 고쳤지만 아직 저장하지 않은 프롬프트(범위별)
 let promptDrafts = {};
 
 const placeholders = [
@@ -435,9 +406,6 @@ function sanitizePlaceholderValue(value) {
     if (Array.isArray(value?.entries) && value.entries.length) {
         entries = value.entries.filter((item) => typeof item === "string");
     } else {
-        // 구버전({content, history} 또는 {content, previousContent}) 호환:
-        // 예전 history는 "현재 내용 제외, 오래된 것 → 최신" 순서였으므로 그대로 앞에 붙이고
-        // content를 맨 뒤(최신)에 둔다.
         let oldHistory = [];
 
         if (Array.isArray(value?.history)) {
@@ -470,7 +438,6 @@ function sanitizeScopeState(scopeState) {
         presetId: typeof source.presetId === "string" ? source.presetId : "",
     };
 
-    // 이 채팅방에서 켜 둔 프리셋 id들 (규칙·AU 탭). 없으면 "아직 안 정함" → ★ 프리셋들이 켜진다.
     if (Array.isArray(source.onIds)) {
         state.onIds = source.onIds.filter((id) => typeof id === "string");
     }
@@ -541,7 +508,6 @@ function pruneRemovedPlaceholders() {
 }
 
 function normalizePromptDepth(raw) {
-    // 구버전: 숫자 하나를 모든 범위에 공통 적용했음 (줄거리 두 칸은 이 시절에 없었으므로 새 기본값 사용)
     if (Number.isInteger(raw)) {
         return {
             ...DEFAULT_PROMPT_DEPTHS,
@@ -688,6 +654,7 @@ function normalizeSettings() {
     settings._migratedV8 = Boolean(settings._migratedV8);
     settings._migratedV9 = Boolean(settings._migratedV9);
     settings._migratedV10 = Boolean(settings._migratedV10);
+    settings._migratedV11 = Boolean(settings._migratedV11);
 
     Object.keys(settings.aus).forEach((key) => {
         settings.aus[key] = sanitizeScopeState(settings.aus[key]);
@@ -741,7 +708,6 @@ function migrateV1SettingsIfNeeded() {
     return true;
 }
 
-// v2까지 프리셋은 범위 구분 없이 하나 → 세 범위 모두에 복사
 function migrateV3PresetsIfNeeded() {
     const settings = getSettings();
 
@@ -773,7 +739,6 @@ function migrateV3PresetsIfNeeded() {
     return true;
 }
 
-// v3까지 캐릭터 범위는 캐릭터 카드 단위로 저장됨 → v4부터 채팅 단위. 옮길 방법이 없어 예전 데이터 정리
 function migrateV4LegacyCharScopeIfNeeded() {
     const settings = getSettings();
 
@@ -799,7 +764,6 @@ function migrateV4LegacyCharScopeIfNeeded() {
     return true;
 }
 
-// v4까지 프롬프트는 문자열 하나 → 범위별 객체로 변경. 커스텀했던 값은 "채팅" 범위로 이전
 function migrateV5DirectionPromptIfNeeded() {
     const settings = getSettings();
 
@@ -822,9 +786,6 @@ function migrateV5DirectionPromptIfNeeded() {
     return true;
 }
 
-// v6: 줄거리 탭(큰 줄거리/작은 줄거리) 추가.
-// - 캐릭터 프롬프트가 예전 기본값 그대로면 "은은하게 참고" 새 기본값으로 교체
-// - Depth가 예전 기본값(전부 1) 그대로면 새 기본값으로 교체 (직접 바꾼 값은 건드리지 않음)
 function migrateV6PlotScopesIfNeeded() {
     const settings = getSettings();
 
@@ -851,8 +812,6 @@ function migrateV6PlotScopesIfNeeded() {
     return true;
 }
 
-// v7: 전역 프리셋에 "기본"(고정) 프리셋을 둔다. 채팅방마다 고른 프리셋을 따로 기억하고,
-// 고른 적 없는 채팅방은 고정된 프리셋으로 열린다. 지금까지 쓰던 전역 내용이 그대로 "기본"이 된다.
 function migrateV7DefaultPresetIfNeeded() {
     const settings = getSettings();
 
@@ -875,8 +834,6 @@ function migrateV7DefaultPresetIfNeeded() {
     return true;
 }
 
-// v8: 삽입 위치(Depth) 기본값 변경 (전역 0 / 채팅 1 / 캐릭터 2 / 작은 줄거리 3 / 큰 줄거리 4).
-// 예전 기본값 그대로 쓰던 경우에만 새 기본값으로 바꾸고, 직접 바꾼 값은 건드리지 않는다.
 function migrateV8DepthDefaultsIfNeeded() {
     const settings = getSettings();
 
@@ -897,9 +854,6 @@ function migrateV8DepthDefaultsIfNeeded() {
     return true;
 }
 
-// v9: AU 탭 신설. 캐릭터 탭은 프리셋 없이 메모 칸만 남는다.
-// - 캐릭터 프리셋은 지우지 않고 AU 프리셋 목록으로 옮긴다 (필요 없으면 AU 탭에서 지우면 된다)
-// - 규칙(전역): 이미 쓰던 채팅방은 지금 열어둔 프리셋 하나만 켜진 상태로 이어간다 (프롬프트가 달라지지 않게)
 function migrateV9AuScopeIfNeeded() {
     const settings = getSettings();
 
@@ -928,8 +882,6 @@ function migrateV9AuScopeIfNeeded() {
     return true;
 }
 
-// v10: 기본 프롬프트를 짧게 줄였다 (규칙·AU·캐릭터·채팅).
-// 예전 기본값 그대로 쓰던 프롬프트만 새 기본값으로 바꾸고, 직접 고친 프롬프트는 건드리지 않는다.
 function migrateV10ShortPromptsIfNeeded() {
     const settings = getSettings();
 
@@ -952,6 +904,41 @@ function migrateV10ShortPromptsIfNeeded() {
     return true;
 }
 
+function migrateV11MergeCharPresetsIfNeeded() {
+    const settings = getSettings();
+
+    if (settings._migratedV11) {
+        return false;
+    }
+
+    const lists = settings.presets.direction;
+    const leftover = lists.char;
+
+    if (leftover.length > 0) {
+        settings.presetBackupV11 = { char: cloneSettings(leftover) };
+
+        const seen = new Set(lists.au.map((preset) => `${preset.name}\n${preset.content}`));
+        const usedIds = new Set(lists.au.map((preset) => preset.id));
+        let moved = 0;
+
+        leftover.forEach((preset) => {
+            const signature = `${preset.name}\n${preset.content}`;
+
+            if (seen.has(signature)) return;
+
+            seen.add(signature);
+            lists.au.push({ ...preset, id: usedIds.has(preset.id) ? generatePresetId() : preset.id });
+            moved += 1;
+        });
+
+        lists.char = [];
+        console.log(`${LOG_PREFIX} 캐릭터 프리셋 ${leftover.length}개 중 ${moved}개를 AU 프리셋에 합쳤습니다. (원본은 presetBackupV11에 보관)`);
+    }
+
+    settings._migratedV11 = true;
+    return true;
+}
+
 async function loadSettings() {
     const settings = getSettings();
 
@@ -970,14 +957,13 @@ async function loadSettings() {
     const migratedV8 = migrateV8DepthDefaultsIfNeeded();
     const migratedV9 = migrateV9AuScopeIfNeeded();
     const migratedV10 = migrateV10ShortPromptsIfNeeded();
+    const migratedV11 = migrateV11MergeCharPresetsIfNeeded();
 
-    if (migrated || migratedV3 || migratedV4 || migratedV5 || migratedV6 || migratedV7 || migratedV8 || migratedV9 || migratedV10 || pruned) {
+    if (migrated || migratedV3 || migratedV4 || migratedV5 || migratedV6 || migratedV7 || migratedV8 || migratedV9 || migratedV10 || migratedV11 || pruned) {
         saveSettingsDebounced();
     }
 }
 
-// 규칙(global)·AU 범위: 켜기/끄기는 모든 채팅방 공통, 내용과 "어떤 프리셋을 열어뒀는지·켜 뒀는지"는 채팅방별.
-// 한 번도 건드리지 않은 채팅방은 ★ 프리셋들이 켜진 상태로 열린다 (그중 첫 번째가 입력칸에 열린다).
 function getSharedScoped(scope) {
     const settings = getSettings();
     const { shared: sharedKey, store: storeKey } = SHARED_SCOPES[scope];
@@ -1029,7 +1015,6 @@ function ensureSharedScoped(scope) {
 
     if (!settings[storeKey][key]) {
         const current = getSharedScoped(scope);
-        // 항목을 처음 만드는 순간, 켜져 있던 프리셋을 그대로 굳혀 둔다 (이후 ★를 바꿔도 이 방은 그대로)
         settings[storeKey][key] = sanitizeScopeState({
             direction: current.direction,
             presetId: current.presetId,
@@ -1127,8 +1112,6 @@ function isValidEnabledContent(value) {
     return Boolean(value?.enabled && typeof value?.content === "string" && value.content.trim() !== "");
 }
 
-// 입력칸에 보이는 내용이 아니라, 실제로 프롬프트에 들어갈 내용을 담은 값
-// (규칙·AU는 켜 둔 프리셋들을 이어 붙인 내용)
 function getInjectionPlaceholder(scope, placeholderKey) {
     const value = getScopedPlaceholder(scope, placeholderKey);
 
@@ -1308,7 +1291,6 @@ function getPresetList(placeholderKey, scope) {
     return settings.presets[placeholderKey]?.[scope] || [];
 }
 
-// ★ 프리셋들 (규칙·AU 범위): 아직 건드리지 않은 채팅방에서 처음부터 켜져 있는 프리셋. 여러 개 가능.
 function getPinnedIds(scope) {
     return toIdArray(getSettings().presetPins?.[scope]);
 }
@@ -1319,7 +1301,6 @@ function getFirstPinnedPreset(scope) {
     return getPresetList("direction", scope).find((preset) => ids.includes(preset.id)) || null;
 }
 
-// 입력칸에 열어둔 "현재 프리셋" id. 저장된 선택 → 첫 ★ 프리셋 → (예전 데이터) 내용이 같은 프리셋 순으로 찾는다.
 function resolveSelectedId(scope, scoped) {
     const list = getPresetList("direction", scope);
     const storedId = scoped?.presetId || "";
@@ -1345,7 +1326,6 @@ function getSelectedPresetId(scope) {
     return resolveSelectedId(scope, getScopedSettings(scope));
 }
 
-// 이 채팅방에서 켜 둔 프리셋 id들(목록 순서). 아직 안 정했다면 ★ 프리셋들이 켜진 상태다.
 function getEffectiveOnIds(scope, scoped) {
     const ids = Array.isArray(scoped?.onIds) ? scoped.onIds : getPinnedIds(scope);
     const set = new Set(ids);
@@ -1370,8 +1350,6 @@ function setPresetOn(scope, presetId, on) {
     return true;
 }
 
-// 프롬프트에 실제로 넣을 내용: 켜 둔 프리셋을 목록 순서대로 이어 붙인다.
-// 입력칸에 열어둔 프리셋은 저장 전 내용(입력칸)을, 나머지는 저장된 내용을 쓴다.
 function composePresetContent(scope) {
     const scoped = getScopedSettings(scope);
     if (!scoped) return "";
@@ -1388,7 +1366,6 @@ function composePresetContent(scope) {
         if (typeof text === "string" && text.trim()) parts.push(text.trim());
     });
 
-    // 어떤 프리셋에도 속하지 않은(저장 안 한) 입력 내용도 그대로 반영한다
     if (!currentId && draft.trim()) parts.push(draft.trim());
 
     return parts.join("\n\n");
@@ -1398,7 +1375,6 @@ function presetStoreOf(scope) {
     return SHARED_SCOPES[scope]?.store || "";
 }
 
-// 프리셋 내용을 저장(덮어쓰기)하면, 그 프리셋을 열어두고 아직 안 고친 채팅방도 새 내용을 따라가게 한다.
 function propagatePresetContent(scope, presetId, oldContent, newContent) {
     const store = getSettings()[presetStoreOf(scope)];
 
@@ -1414,9 +1390,6 @@ function propagatePresetContent(scope, presetId, oldContent, newContent) {
     });
 }
 
-// 프리셋을 지우면: 이 프리셋을 열어두거나 켜 둔 모든 채팅방에서 내용까지 함께 지운다.
-// - 열어둔 채팅방은 입력칸 내용을 ★ 프리셋(없으면 빈 칸)으로 되돌린다 → 삭제된 내용이 프롬프트에 남지 않는다
-// - 켜 둔 곳·★에서도 뺀다
 function purgeDeletedPreset(scope, presetId, deletedContent) {
     const settings = getSettings();
     const storeKey = presetStoreOf(scope);
@@ -1424,7 +1397,7 @@ function purgeDeletedPreset(scope, presetId, deletedContent) {
     const sharedKey = SHARED_SCOPES[scope]?.shared;
     const hasContent = typeof deletedContent === "string" && deletedContent.trim() !== "";
 
-    // ★에서 먼저 빼야 "되돌아갈 프리셋"에 지운 프리셋이 안 끼어든다
+    // ★에서 먼저 빼야 되돌아갈 프리셋에 지운 프리셋이 끼지 않는다
     if (settings.presetPins) {
         settings.presetPins[scope] = getPinnedIds(scope).filter((id) => id !== presetId);
     }
@@ -1438,7 +1411,6 @@ function purgeDeletedPreset(scope, presetId, deletedContent) {
         if (!entry) return;
 
         const content = typeof entry.direction?.content === "string" ? entry.direction.content : "";
-        // 예전 데이터: 프리셋 id 없이 내용만 같은 경우도 이 프리셋을 열어둔 것으로 본다
         const wasOpen = entry.presetId === presetId || (!entry.presetId && hasContent && content === deletedContent);
 
         if (wasOpen) {
@@ -1449,7 +1421,6 @@ function purgeDeletedPreset(scope, presetId, deletedContent) {
         if (Array.isArray(entry.onIds)) entry.onIds = entry.onIds.filter((id) => id !== presetId);
     });
 
-    // 채팅방이 없을 때 쓰는 공용 칸
     const shared = sharedKey ? settings[sharedKey] : null;
     const sharedContent = typeof shared?.direction?.content === "string" ? shared.direction.content : "";
 
@@ -1458,7 +1429,6 @@ function purgeDeletedPreset(scope, presetId, deletedContent) {
     }
 }
 
-// 저장 버튼(💾): 열어둔 프리셋과 내용이 달라지면 불이 켜진다.
 function refreshPresetControls() {
     if (!compactUIPopup || scopeHidesPresets(currentScope)) return;
 
@@ -1471,7 +1441,6 @@ function refreshPresetControls() {
     compactUIPopup.find(".dm-compact--preset-rename, .dm-compact--preset-delete").prop("disabled", !preset);
 }
 
-// 타이핑 중에는 매 글자마다 계산하지 않고, 멈춘 뒤 한 번만 갱신한다 (렉 방지)
 let presetControlsTimer = null;
 
 function schedulePresetControlsRefresh() {
@@ -1479,8 +1448,6 @@ function schedulePresetControlsRefresh() {
     presetControlsTimer = setTimeout(refreshPresetControls, 150);
 }
 
-// ---- 프리셋 목록 (직접 만든 드롭다운)
-// 줄마다: 🟢(켜짐) · 이름(현재 프리셋은 굵게) · ▲▼🗑(순서 편집 중) · ★(새 채팅방에서 처음부터 켜짐)
 let presetListOpen = false;
 let presetReorderMode = false;
 
@@ -1570,7 +1537,6 @@ function updateAppliedIndicator() {
     refreshHistoryButtons();
 }
 
-// 줄거리 탭에서 지금 편집 중인 칸(큰 줄거리/작은 줄거리)을 강조
 function updateActiveFieldHighlight() {
     if (!compactUIPopup) return;
 
@@ -1579,8 +1545,6 @@ function updateActiveFieldHighlight() {
     });
 }
 
-// 줄거리 탭에서 다른 칸으로 포커스가 옮겨졌을 때: 이전 칸의 기록을 확정하고 헤더(←/→, 체크박스)가 새 칸을 가리키게 한다.
-// 입력창 내용은 건드리지 않는다(커서가 튀지 않게).
 function switchActiveField(scope) {
     if (!compactUIPopup || scope === currentScope) return;
 
@@ -1618,7 +1582,6 @@ function syncPopupByCurrentState() {
     compactUIPopup.toggleClass("dm-compact--plot-tab", isPlot);
     compactUIPopup.toggleClass("dm-compact--scope-off", !settings.enabled);
 
-    // 위 칸은 줄거리 탭에서는 큰 줄거리, 다른 탭에서는 현재 범위. 아래 칸은 줄거리 탭에서만 보인다.
     [
         { slot: "main", scope: isPlot ? "plotMain" : currentScope },
         { slot: "next", scope: "plotNext" },
@@ -1697,7 +1660,7 @@ function closeCompactUIPopup() {
     }
 
     if (compactUIButton) {
-        // class 대신 data 속성 사용: 서드파티 UI 스크립트가 classList로 버튼을 식별하는 경우 위치 설정이 초기화되는 것을 방지
+        // classList 대신 data 속성 사용: 서드파티 UI 스크립트가 버튼 위치를 초기화하지 않게
         compactUIButton.removeAttr("data-dm-popup-open");
     }
 
@@ -1801,8 +1764,7 @@ function showCompactUIPopup() {
 function setupCompactUIEventListeners() {
     if (!compactUIPopup) return;
 
-    // touchstart에서 preventDefault로 textarea blur(키보드 닫힘)를 막고 핸들러를 직접 실행한 뒤,
-    // 뒤따르는 click은 무시한다(중복 실행 방지). 마우스 환경에서는 click만 사용된다.
+    // touchstart에서 직접 처리해 키보드가 닫히지 않게 하고, 뒤따르는 click은 무시한다
     function bindTapAction(selector, handler) {
         let suppressNextClick = false;
 
@@ -1838,7 +1800,6 @@ function setupCompactUIEventListeners() {
 
         flushHistorySession();
 
-        // 줄거리 탭의 높이는 항상 공용 높이에서 계산하므로 따로 저장하지 않는다.
         const outgoingGroup = textareaHeightGroup(currentScope);
 
         if (outgoingGroup !== "plot") {
@@ -1868,7 +1829,6 @@ function setupCompactUIEventListeners() {
             return;
         }
 
-        // 줄거리 탭처럼 한 탭에 두 칸이 있으면 두 칸을 함께 켜고 끈다.
         getTabScopes(currentScope).forEach((scope) => {
             if (scope === currentScope) return;
 
@@ -1891,7 +1851,6 @@ function setupCompactUIEventListeners() {
         updateAppliedIndicator();
     });
 
-    // 체크박스도 터치 시 키보드가 닫히므로 직접 토글하고 change를 발생시킨다.
     compactUIPopup.on("touchstart", ".dm-compact--radio", function (e) {
         e.preventDefault();
         const checkbox = $(this);
@@ -1902,7 +1861,6 @@ function setupCompactUIEventListeners() {
         e.preventDefault();
     });
 
-    // 채팅 탭에서 리사이즈 손잡이를 실제로 드래그했는지 감지 (모서리 근처 터치 + 높이 변화 둘 다 확인)
     compactUIPopup.on("mousedown touchstart", ".dm-compact--textarea", function (e) {
         if (!usesFreeSize(currentScope) || chatHeightIsCustom) {
             resizeCandidateHeight = null;
@@ -1932,7 +1890,6 @@ function setupCompactUIEventListeners() {
         const currentPlaceholder = getPopupCurrentPlaceholder();
         const scopedValue = getCurrentScopeState(currentPlaceholder.key);
 
-        // 지금 목록 순서는 그대로 두고, 맨 뒤에 빈 칸을 새로 추가해서 그 칸으로 이동한다.
         scopedValue.entries.push("");
         capEntries(scopedValue.entries);
         scopedValue.activeIndex = scopedValue.entries.length - 1;
@@ -1951,7 +1908,6 @@ function setupCompactUIEventListeners() {
         refreshPresetControls();
     });
 
-    // 줄거리 탭: 포커스가 옮겨진 칸을 "지금 편집 중인 칸"으로 삼는다
     compactUIPopup.on("focusin", ".dm-compact--textarea", function () {
         const fieldScope = $(this).attr("data-scope");
 
@@ -1973,7 +1929,6 @@ function setupCompactUIEventListeners() {
         const lastIndex = scopedValue.entries.length - 1;
 
         if (scopedValue.activeIndex !== lastIndex) {
-            // 이전 칸을 보다가 수정: 기존 항목들은 그대로 두고 맨 뒤에 새 칸으로 분기한다.
             scopedValue.entries.push(newContent);
             capEntries(scopedValue.entries);
             scopedValue.activeIndex = scopedValue.entries.length - 1;
@@ -1989,7 +1944,6 @@ function setupCompactUIEventListeners() {
             return;
         }
 
-        // 매크로 재등록은 비용이 커서 입력이 250ms 멈췄을 때만 반영
         clearTimeout(compactUIApplyDebounceTimer);
         compactUIApplyDebounceTimer = setTimeout(() => {
             commitDirectionContentNow(currentPlaceholder);
@@ -2012,9 +1966,8 @@ function setupCompactUIEventListeners() {
 
     compactUIPopup.find(".dm-compact--preset-current").on("click", () => setPresetListOpen(!presetListOpen));
 
-    // 목록 안의 모든 동작은 한 곳에서 받는다 (줄마다 리스너를 달지 않는다)
     compactUIPopup.find(".dm-compact--preset-list").on("click", (e) => {
-        // 목록을 다시 그리면 눌린 요소가 사라져서 "팝업 바깥을 눌렀다"로 오해받는다 → 여기서 이벤트를 끝낸다
+        // 목록을 다시 그리면 눌린 요소가 사라져 바깥 클릭으로 오해받으므로 여기서 이벤트를 끝낸다
         e.stopPropagation();
 
         const placeholder = getPopupCurrentPlaceholder();
@@ -2057,7 +2010,6 @@ function setupCompactUIEventListeners() {
         }
     });
 
-    // 팝업의 다른 곳을 누르면 목록을 닫는다
     compactUIPopup.on("click", (e) => {
         if (presetListOpen && !$(e.target).closest(".dm-compact--preset-list, .dm-compact--preset-current").length) {
             setPresetListOpen(false);
@@ -2076,7 +2028,6 @@ function setupCompactUIEventListeners() {
         const preset = { id: generatePresetId(), name: name.trim(), content: textareaValue };
         getPresetList(placeholder.key, currentScope).push(preset);
         setSelectedPresetId(currentScope, preset.id);
-        // 방금 만든 프리셋은 바로 켜 둔다 (입력칸 내용을 그대로 담았으니 프롬프트도 그대로)
         setPresetOn(currentScope, preset.id, true);
         commitDirectionContentNow(placeholder);
         saveSettingsDebounced();
@@ -2151,7 +2102,6 @@ function setupCompactUIEventListeners() {
         list.splice(at, 1);
         purgeDeletedPreset(scope, presetId, deletedContent);
 
-        // 지금 열어둔 채팅방의 입력칸도 되돌아간 내용으로 바꾼다 (삭제된 내용이 화면에 남지 않게)
         const state = getCurrentScopeState(placeholder.key);
 
         if (state.content !== before) {
@@ -2175,7 +2125,7 @@ function setupCompactUIEventListeners() {
             return;
         }
 
-        // 이미 화면에서 사라진 요소(다시 그려진 목록 줄 등)를 누른 경우는 바깥 클릭이 아니다
+        // 다시 그려져 사라진 요소를 누른 경우는 바깥 클릭이 아니다
         if (!e.target.isConnected) {
             return;
         }
@@ -2457,7 +2407,6 @@ function setupExtensionMenuEventHandlers() {
         updateExtensionMenuUI();
     });
 
-    // 프롬프트는 저장 버튼을 눌러야 반영된다. 고치는 중에는 초안으로만 들고 있고, 저장 버튼에 불이 켜진다.
     $("#direction_prompt_text").on("input", function () {
         const value = String($(this).val() ?? "");
 
@@ -2573,8 +2522,7 @@ function injectDirectionPrompt(eventData) {
         return;
     }
 
-    // 모든 Depth를 "원래 메시지 기준"으로 정확히 맞추기 위해, 깊은 것(앞쪽)부터 삽입한다.
-    // (이미 끼워 넣은 개수만큼 인덱스가 밀리는 것을 보정) 같은 Depth끼리는 SCOPE_ORDER 순서를 유지한다.
+    // 깊은 것(앞쪽)부터 삽입하고, 이미 끼운 개수만큼 인덱스를 보정한다
     const originalLength = messages.length;
     let inserted = 0;
 

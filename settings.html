@@ -13,16 +13,16 @@
         <br>
         <div class="">
             <div><label class="flex1">Direction 프롬프트 (범위별로 따로 저장됩니다)</label></div>
-            <div class="flex-container dm-prompt-tabs" style="gap:6px; margin: 4px 0; flex-wrap: wrap;">
+            <div class="dm-prompt-tabs">
                 <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="global">규칙</button>
                 <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="au">AU</button>
                 <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="char">캐릭터</button>
-                <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="plotMain">큰 줄거리</button>
-                <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="plotNext">작은 줄거리</button>
+                <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="plotMain">큰줄거리</button>
+                <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="plotNext">작은줄거리</button>
                 <button type="button" class="menu_button dm-prompt-tab-btn" data-scope="chat">채팅</button>
             </div>
             <textarea id="direction_prompt_text" class="text_pole textarea_compact" rows="8" placeholder="Direction 프롬프트를 입력하세요..."></textarea>
-            <div class="flex-container dm-prompt-actions" style="gap:6px; margin-top:6px; justify-content:flex-end;">
+            <div class="dm-prompt-actions">
                 <button id="direction_prompt_revert" type="button" class="menu_button" title="저장된 프롬프트로 되돌리기" disabled>
                     <i class="fa-solid fa-rotate-left"></i>
                     <span>되돌리기</span>
