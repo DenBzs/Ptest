@@ -107,8 +107,8 @@
     background: transparent;
     border: 1px solid var(--SmartThemeBorderColor);
     color: var(--SmartThemeBodyColor);
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     border-radius: 4px;
     cursor: pointer;
     display: flex;
@@ -129,7 +129,7 @@
 }
 
 .dm-compact--history-count {
-    min-width: 28px;
+    min-width: 26px;
     text-align: center;
     font-size: 11px;
     opacity: 0.7;
@@ -141,7 +141,7 @@
 
 .dm-compact--scope-row {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     padding: 8px 8px 4px;
     border-bottom: 1px solid var(--SmartThemeBorderColor);
     align-items: center;
@@ -154,18 +154,19 @@
     color: var(--SmartThemeBodyColor);
     opacity: 0.55;
     border-radius: 4px;
-    height: 30px;
-    padding: 0 6px;
-    min-width: 0;
-    flex: 1 1 0;
-    justify-content: center;
+    height: 26px;
+    padding: 0 5px;
     cursor: pointer;
     transition: none;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 3px;
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
 }
 
 .dm-compact--scope-btn--active {
@@ -205,7 +206,7 @@
 .dm-compact--preset-row {
     display: flex;
     gap: 5px;
-    padding: 2px 8px 3px;
+    padding: 2px 8px 0;
     align-items: center;
     flex-shrink: 0;
 }
@@ -340,19 +341,20 @@
     }
 
     .dm-compact--scope-btn {
-        height: 25px;
-        padding: 0 2px;
+        height: 24px;
+        padding: 0 3px;
         gap: 2px;
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 600;
     }
 
     .dm-compact--scope-row {
-        padding: 5px 4px 3px;
+        padding: 6px 6px 3px;
+        gap: 3px;
     }
 
     .dm-compact--preset-row {
-        padding: 2px 6px 3px;
+        padding: 2px 6px 0;
     }
 
     .dm-compact--content {
@@ -545,48 +547,55 @@
     border-radius: 4px;
 }
 
-.dm-compact--move-delete {
-    margin-left: 5px;
-    color: #d58b8b;
-    opacity: 0.8;
-}
-
-.dm-compact--move-delete:hover {
-    color: #e45f5f;
-    opacity: 1;
-}
-
 .dm-compact--move-off {
     opacity: 0.25;
     pointer-events: none;
 }
 
-.dm-compact--dot {
+.dm-compact--move-del {
+    margin-left: 6px;
+    color: #ef6a6a;
+    font-size: 11px;
+}
+
+/* 켜짐 표시(초록불): 보이는 점은 작게, 누르는 영역은 넉넉하게 */
+.dm-compact--led-hit {
     flex-shrink: 0;
     width: 24px;
     height: 24px;
-    box-sizing: border-box;
-    display: inline-flex;
+    margin-left: -6px;
+    display: flex;
     align-items: center;
     justify-content: center;
-    border: 0;
-    border-radius: 50%;
     cursor: pointer;
 }
 
-.dm-compact--dot::before {
-    content: "";
-    display: block;
-    width: 9px;
-    height: 9px;
+.dm-compact--led {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
     box-sizing: border-box;
-    border: 2px solid var(--SmartThemeBorderColor);
     border-radius: 50%;
+    border: 1px solid var(--SmartThemeBorderColor);
+    background-color: transparent;
 }
 
-.dm-compact--dot-on::before {
-    border-color: var(--SmartThemeQuoteColor);
-    background: radial-gradient(circle, var(--SmartThemeQuoteColor) 0 45%, transparent 50%);
+.dm-compact--led-on {
+    border-color: #3ddc84;
+    background-color: #3ddc84;
+    box-shadow: 0 0 5px rgba(61, 220, 132, 0.85);
+}
+
+/* 이 범위 전체가 꺼져 있으면 초록불도 흐리게 (켜 둬도 프롬프트에는 안 들어간다) */
+.dm-compact--scope-off .dm-compact--led-on {
+    opacity: 0.4;
+    box-shadow: none;
+}
+
+.dm-compact--led-inline {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 6px;
 }
 
 /* ===== 확장 설정 패널 ===== */
