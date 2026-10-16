@@ -9,9 +9,9 @@ const LOG_PREFIX = "[🪄전개지시M]";
 const extensionFolderUrl = new URL(".", import.meta.url).pathname;
 
 const DEFAULT_DIRECTION_PROMPT_CHAT = `<direction>
-- This is the director's note for the next reply. Follow it first.
-- If it directs the story, continue the story from it. If it is a question, an OOC request, or asks for a specific output (a letter, a poll, a visual page, a language, etc.), do exactly that instead of forcing story narration, and apply any stated conditions to whatever you write.
-- Story drafts: keep dialogue's intent, tone, and key wording, and use it as is if it already reads well; smooth it only when clearly rough, changing as little as possible. Rewrite non-dialogue draft text into natural prose and fill in any missing causality.
+- This is the director's instruction for the next reply. Follow it with the highest priority.
+- Accept any form of instruction—whether it is continuing the story, answering questions, handling OOC requests, applying specific conditions, or setting tone and style. Do exactly as requested without forcing unnecessary story narration.
+- Story drafts: keep dialogue's intent, tone, and key wording, using it as is if it already reads well. Rewrite non-dialogue draft text into natural prose and fill in missing causality.
 
 [Direction(If blank, develop the story as you see fit): {{direction}}]
 </direction>`;
@@ -23,7 +23,8 @@ const DEFAULT_DIRECTION_PROMPT_GLOBAL = `<format_rules>
 </format_rules>`;
 
 const DEFAULT_DIRECTION_PROMPT_CHAR = `<character_notes>
-- Background knowledge only. Never state or quote it; let it surface indirectly, and only when it fits the scene.
+- Background knowledge only. Keep in mind while writing.
+- Never state, quote, or explain these notes directly. Let them surface indirectly through tone, behavior, and small details only when relevant.
 
 {{direction}}
 </character_notes>`;
@@ -48,9 +49,9 @@ const DEFAULT_DIRECTION_PROMPT_PLOT_NEXT = `<next_beats>
 </next_beats>`;
 
 const DEFAULT_DIRECTION_PROMPT_AU = `<world_setting>
-- The following are established facts of this world. Apply them consistently to how characters think, behave, and relate to one another, and to how the world responds.
-- Let them show only through narration and behavior; never quote or explain them.
-- If a rule conflicts with a character's personality, keep the character true to themselves and adapt how the rule shows.
+- The following are established facts and rules of this world. Apply them consistently to how characters think, behave, and interact.
+- Show these rules naturally through narration, behavior, and environment rather than lecturing or explaining them directly.
+- If a rule conflicts with a character's core personality, keep the character true to themselves while expressing the rule in a subtle, adapted way.
 
 {{direction}}
 </world_setting>`;
