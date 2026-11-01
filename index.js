@@ -148,13 +148,6 @@ function isPresetScope(scope) {
 
 const PLOT_STORE = { plotMain: "plotMains", plotNext: "plotNexts" };
 
-const SCOPE_PLACEHOLDERS = {
-    default: "Direction 내용을 입력하세요...",
-    au: "AU 설정을 적으세요 (예: 오메가버스의 규칙과 설정)",
-    plotMain: "전체 방향·결말을 적으세요 (모델이 배경으로만 참고해요)",
-    plotNext: "앞으로 몇 챗 분량의 사건을 순서대로 적으세요 (구체적일수록 속도가 잘 맞아요)",
-};
-
 let lastPlotScope = "plotNext";
 
 function scopeToTab(scope) {
@@ -200,6 +193,7 @@ const defaultSettings = {
     directionPrompt: { ...DEFAULT_DIRECTION_PROMPTS },
     promptDepth: { ...DEFAULT_PROMPT_DEPTHS },
     lastScope: "chat",
+    userSendMode: false,
     _migratedV2: false,
     _migratedV3: false,
     _migratedV4: false,
@@ -386,10 +380,8 @@ const USER_SEND_LONG_PRESS_MS = 500;
 const CHAT_TAB_HTML = '<span class="dm-compact--scope-emoji">🗨️</span>채팅';
 const USER_TAB_HTML = '<span class="dm-compact--scope-emoji">✨</span>user';
 const USER_SEND_TITLE = "✨ user로 전송";
-const USER_SEND_PLACEHOLDER = "user로 보낼 메시지를 입력하세요. 전송은 원래 보내기 버튼으로!";
+// 채팅탭 자리를 user 전송 탭으로 바꿔 둔 상태인지. 꾹 눌러서 바꾸고, 다시 꾹 누를 때까지 유지된다(설정에 저장).
 let userSendMode = false;
-let userSendOriginalInput = null;
-let userSendDidSend = false;
 
 let isNativePopupOpen = false;
 let compactUIApplyDebounceTimer = null;
@@ -657,6 +649,7 @@ function normalizeSettings() {
     settings.directionPrompt = normalizeDirectionPromptObject(settings.directionPrompt);
     settings.promptDepth = normalizePromptDepth(settings.promptDepth);
     settings.lastScope = SCOPE_ORDER.includes(settings.lastScope) ? settings.lastScope : "chat";
+    settings.userSendMode = Boolean(settings.userSendMode);
     settings._migratedV2 = Boolean(settings._migratedV2);
     settings._migratedV3 = Boolean(settings._migratedV3);
     settings._migratedV4 = Boolean(settings._migratedV4);
@@ -965,6 +958,7 @@ async function loadSettings() {
     const migratedV6 = migrateV6PlotScopesIfNeeded();
     const pruned = pruneRemovedPlaceholders();
     normalizeSettings();
+    userSendMode = Boolean(getSettings().userSendMode);
     const migratedV7 = migrateV7DefaultPresetIfNeeded();
     const migratedV8 = migrateV8DepthDefaultsIfNeeded();
     const migratedV9 = migrateV9AuScopeIfNeeded();
@@ -1540,7 +1534,7 @@ function updateAppliedIndicator() {
     const activeScopes = new Set(combined.activeScopes);
 
     TAB_ORDER.forEach((tab) => {
-        const isOn = TAB_SCOPES[tab].some((scope) => activeScopes.has(scope));
+        const isOn = !(tab === "chat" && userSendMode) && TAB_SCOPES[tab].some((scope) => activeScopes.has(scope));
         compactUIPopup
             .find(`.dm-compact--scope-btn[data-tab="${tab}"]`)
             .toggleClass("dm-compact--scope-btn--on", isOn);
@@ -1603,12 +1597,25 @@ function syncPopupByCurrentState() {
         compactUIPopup
             .find(`.dm-compact--textarea-${slot}`)
             .attr("data-scope", scope)
-            .attr("placeholder", SCOPE_PLACEHOLDERS[scope] || SCOPE_PLACEHOLDERS.default)
             .val(state.content || "")
             .prop("disabled", !settings.enabled);
     });
 
     compactUIPopup.toggleClass("dm-compact--hide-preset", scopeHidesPresets(currentScope));
+
+    updateChatTabLabel();
+
+    const userView = isUserView();
+    compactUIPopup.toggleClass("dm-compact--user-mode", userView);
+    compactUIPopup.find(".dm-compact--title").text(userView ? USER_SEND_TITLE : "🪄전개지시M");
+
+    if (userView) {
+        compactUIPopup
+            .find(".dm-compact--textarea-main")
+            .attr("data-scope", "")
+            .val(getSendInput())
+            .prop("disabled", false);
+    }
 
     refreshScopeButtons();
     renderPresetSelect();
@@ -1653,20 +1660,45 @@ function escapeHtml(value) {
         .replace(/'/g, "&#39;");
 }
 
-// user 전송 모드의 상태만 정리한다 (화면은 건드리지 않음). 보내지 않고 나가면 입력칸 원래 내용을 되돌린다.
-function resetUserSendState() {
-    if (!userSendMode) return;
-
-    userSendMode = false;
-
-    if (!userSendDidSend) {
-        $("#send_textarea").val(userSendOriginalInput ?? "").trigger("input");
-    }
-
-    userSendOriginalInput = null;
-    userSendDidSend = false;
+// 지금 화면이 user 전송 입력칸인지 (user 전송 탭 자리가 켜져 있고, 그 탭을 보고 있을 때)
+function isUserView() {
+    return userSendMode && scopeToTab(currentScope) === "chat";
 }
 
+function setUserSendMode(value) {
+    userSendMode = Boolean(value);
+    getSettings().userSendMode = userSendMode;
+    saveSettingsDebounced();
+}
+
+// 숨겨 둔 채팅 입력칸(#send_textarea)에 값을 넣는다.
+// input 이벤트는 일부러 보내지 않는다: 자동 높이 조절이 돌면 폭 0인 입력칸이 글자 수만큼 길어져 하단 입력줄이 늘어난다.
+function setSendInput(value) {
+    $("#send_textarea").val(value);
+}
+
+function getSendInput() {
+    return String($("#send_textarea").val() ?? "");
+}
+
+function applyChatTabLabel(btn, toUser) {
+    btn.attr("data-mode", toUser ? "user" : "chat")
+        .html(toUser ? USER_TAB_HTML : CHAT_TAB_HTML)
+        .toggleClass("dm-compact--scope-btn--user", toUser);
+}
+
+// 탭 라벨을 애니메이션 없이 현재 모드에 맞춘다 (팝업을 열 때 등)
+function updateChatTabLabel() {
+    if (!compactUIPopup) return;
+
+    const btn = compactUIPopup.find('.dm-compact--scope-btn[data-tab="chat"]');
+
+    if (!btn.length || btn.attr("data-mode") === (userSendMode ? "user" : "chat")) return;
+
+    applyChatTabLabel(btn, userSendMode);
+}
+
+// 꾹 눌러 모드가 바뀔 때 버튼이 휘릭 뒤집히며 라벨이 바뀐다
 function flipChatTab(toUser) {
     if (!compactUIPopup) return;
 
@@ -1674,62 +1706,28 @@ function flipChatTab(toUser) {
 
     if (!btn.length) return;
 
-    btn.addClass("dm-compact--flip-out");
+    btn.attr("data-mode", toUser ? "user" : "chat").addClass("dm-compact--flip-out");
 
     setTimeout(() => {
-        btn.html(toUser ? USER_TAB_HTML : CHAT_TAB_HTML)
-            .toggleClass("dm-compact--scope-btn--user", toUser)
-            .removeClass("dm-compact--flip-out");
+        applyChatTabLabel(btn, toUser);
+        btn.removeClass("dm-compact--flip-out");
     }, 130);
 }
 
-function enterUserSendMode() {
-    if (!compactUIPopup || userSendMode) return;
-
-    if (scopeToTab(currentScope) !== "chat") {
-        switchToTab("chat");
-    }
-
-    if (scopeToTab(currentScope) !== "chat") return;
-
-    flushHistorySession();
-    setPresetListOpen(false);
-
-    userSendMode = true;
-    userSendDidSend = false;
-
-    const input = $("#send_textarea");
-    userSendOriginalInput = String(input.val() ?? "");
-    input.val("").trigger("input");
-
-    compactUIPopup.addClass("dm-compact--user-mode");
-    compactUIPopup.find(".dm-compact--title").text(USER_SEND_TITLE);
-    compactUIPopup
-        .find(".dm-compact--textarea-main")
-        .attr("data-scope", "")
-        .attr("placeholder", USER_SEND_PLACEHOLDER)
-        .val("")
-        .prop("disabled", false)
-        .trigger("focus");
-
-    flipChatTab(true);
-    updateActiveFieldHighlight();
-}
-
-// 화면만 원래대로 돌린다. 호출한 쪽에서 syncPopupByCurrentState()로 입력칸 내용을 다시 채워야 한다.
-function exitUserSendMode() {
-    if (!userSendMode) return;
-
-    resetUserSendState();
-
+// 채팅탭 꾹 누르기: 채팅탭 자리를 user 전송 탭 ↔ 원래 채팅탭으로 바꾼다. 다시 꾹 누르기 전까지 유지된다.
+function toggleUserSendMode() {
     if (!compactUIPopup) return;
 
-    compactUIPopup.removeClass("dm-compact--user-mode");
-    compactUIPopup.find(".dm-compact--title").text("🪄전개지시M");
-    flipChatTab(false);
+    setUserSendMode(!userSendMode);
+    flipChatTab(userSendMode);
+    switchToTab("chat");
+
+    if (isUserView()) {
+        compactUIPopup.find(".dm-compact--textarea-main").trigger("focus");
+    }
 }
 
-// 탭 전환 (탭 버튼 짧게 누르기). user 전송 모드였다면 먼저 빠져나온다.
+// 탭 전환 (탭 버튼 짧게 누르기)
 function switchToTab(nextTab) {
     const nextScope = nextTab === "plot" ? lastPlotScope : TAB_SCOPES[nextTab][0];
     const availability = getScopeAvailability(nextScope);
@@ -1738,7 +1736,6 @@ function switchToTab(nextTab) {
         return;
     }
 
-    exitUserSendMode();
     flushHistorySession();
 
     const outgoingGroup = textareaHeightGroup(currentScope);
@@ -1756,11 +1753,10 @@ function switchToTab(nextTab) {
     restoreTextareaHeightForCurrentScope();
 }
 
-// 보내기 버튼으로 user 메시지가 실제로 전송되면 팝업을 닫는다
+// user 메시지가 실제로 전송되면 팝업을 닫는다 (입력칸 내용은 SillyTavern이 비운다)
 function handleMessageSent() {
-    if (!userSendMode || !compactUIPopup) return;
+    if (!isUserView() || !compactUIPopup) return;
 
-    userSendDidSend = true;
     closeCompactUIPopup();
 }
 
@@ -1769,7 +1765,6 @@ function closeCompactUIPopup() {
         commitDirectionContentNow(getPopupCurrentPlaceholder());
     }
 
-    resetUserSendState();
     flushHistorySession();
 
     if (compactUIPopup) {
@@ -1860,10 +1855,10 @@ function showCompactUIPopup() {
             </div>
 
             <div class="dm-compact--content">
-                <div class="dm-compact--plot-label dm-compact--plot-only" data-scope="plotMain">📖 큰 줄거리<small>방향·결말</small></div>
-                <textarea class="dm-compact--textarea dm-compact--textarea-main" placeholder="Direction 내용을 입력하세요..."></textarea>
-                <div class="dm-compact--plot-label dm-compact--plot-only" data-scope="plotNext">🎬 작은 줄거리<small>몇 챗 분량 사건</small></div>
-                <textarea class="dm-compact--textarea dm-compact--textarea-next dm-compact--plot-only" placeholder="Direction 내용을 입력하세요..."></textarea>
+                <div class="dm-compact--plot-label dm-compact--plot-only" data-scope="plotMain">📖 큰 줄거리</div>
+                <textarea class="dm-compact--textarea dm-compact--textarea-main"></textarea>
+                <div class="dm-compact--plot-label dm-compact--plot-only" data-scope="plotNext">🎬 작은 줄거리</div>
+                <textarea class="dm-compact--textarea dm-compact--textarea-next dm-compact--plot-only"></textarea>
             </div>
         </div>
     `;
@@ -1934,11 +1929,7 @@ function setupCompactUIEventListeners() {
             pressTimer = setTimeout(() => {
                 pressTimer = null;
 
-                if (userSendMode) {
-                    switchToTab("chat");
-                } else {
-                    enterUserSendMode();
-                }
+                toggleUserSendMode();
             }, USER_SEND_LONG_PRESS_MS);
         };
 
@@ -2043,9 +2034,9 @@ function setupCompactUIEventListeners() {
     });
 
     bindTapAction(".dm-compact--clear", function () {
-        if (userSendMode) {
+        if (isUserView()) {
             getScopeTextarea(currentScope).val("");
-            $("#send_textarea").val("").trigger("input");
+            setSendInput("");
             return;
         }
 
@@ -2079,9 +2070,9 @@ function setupCompactUIEventListeners() {
     });
 
     compactUIPopup.find(".dm-compact--textarea").on("input", function () {
-        // user 전송 모드: 전개지시에는 저장하지 않고, 채팅 입력칸에만 그대로 옮긴다
-        if (userSendMode) {
-            $("#send_textarea").val(String($(this).val())).trigger("input");
+        // user 전송 탭: 전개지시에는 저장하지 않고, 채팅 입력칸에만 그대로 옮긴다
+        if (isUserView()) {
+            setSendInput(String($(this).val()));
             return;
         }
 
@@ -2299,7 +2290,7 @@ function setupCompactUIEventListeners() {
         }
 
         // user 전송 모드에서는 하단 입력줄(보내기 버튼 등)을 눌러도 닫지 않는다. 전송되면 handleMessageSent가 닫는다
-        if (userSendMode && $(e.target).closest("#send_form").length) {
+        if (isUserView() && $(e.target).closest("#send_form").length) {
             return;
         }
 
@@ -2313,8 +2304,6 @@ function refreshPopupIfOpened() {
     if (!compactUIPopup) {
         return;
     }
-
-    exitUserSendMode();
 
     syncPopupByCurrentState();
 }
