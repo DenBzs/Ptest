@@ -270,7 +270,8 @@ function restoreTextareaHeightForCurrentScope() {
         return;
     }
 
-    if (usesFreeSize(currentScope) && !chatHeightIsCustom) {
+    // user 전송 탭은 크기 조절을 막고 항상 다른 탭과 같은 높이로 맞춘다
+    if (isUserView() || (usesFreeSize(currentScope) && !chatHeightIsCustom)) {
         textarea[0].style.height = `${Math.round(sharedPx + cachedPresetRowHeight)}px`;
         return;
     }
@@ -379,7 +380,7 @@ function navigateHistory(direction) {
 const USER_SEND_LONG_PRESS_MS = 500;
 const CHAT_TAB_HTML = '<span class="dm-compact--scope-emoji">🗨️</span>채팅';
 const USER_TAB_HTML = '<span class="dm-compact--scope-emoji">✨</span>user';
-const USER_SEND_TITLE = "✨ user로 전송";
+const USER_SEND_TITLE = "✨user로 전송";
 // 채팅탭 자리를 user 전송 탭으로 바꿔 둔 상태인지. 꾹 눌러서 바꾸고, 다시 꾹 누를 때까지 유지된다(설정에 저장).
 let userSendMode = false;
 
@@ -2009,7 +2010,7 @@ function setupCompactUIEventListeners() {
     });
 
     compactUIPopup.on("mousedown touchstart", ".dm-compact--textarea", function (e) {
-        if (!usesFreeSize(currentScope) || chatHeightIsCustom) {
+        if (isUserView() || !usesFreeSize(currentScope) || chatHeightIsCustom) {
             resizeCandidateHeight = null;
             return;
         }
