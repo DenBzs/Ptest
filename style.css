@@ -186,15 +186,17 @@
     opacity: 1;
 }
 
-/* user 전송 모드: 전개지시용 컨트롤은 숨기고 입력칸만 강조 */
+/* user 전송 모드: 전개지시용 컨트롤은 안 보이게만 하고 자리는 그대로 둬서 다른 탭과 헤더 크기를 똑같이 맞춘다 */
 .dm-compact--popup.dm-compact--user-mode .dm-compact--radio,
 .dm-compact--popup.dm-compact--user-mode .dm-compact--history-btn,
 .dm-compact--popup.dm-compact--user-mode .dm-compact--history-count {
-    display: none;
+    visibility: hidden;
+    pointer-events: none;
 }
 
 .dm-compact--popup.dm-compact--user-mode .dm-compact--textarea {
     border-color: var(--SmartThemeQuoteColor);
+    resize: none;
 }
 
 .dm-compact--scope-btn--active {
